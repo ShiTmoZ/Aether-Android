@@ -26,19 +26,6 @@ jobs:
           distribution: 'temurin'
           cache: gradle
 
-      - name: Generate Release Keystore
-        run: |
-          keytool -genkeypair -v \
-            -keystore keystore.jks \
-            -alias aetherkey \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -storepass aetherpassword123 \
-            -keypass aetherpassword123 \
-            -dname "CN=Aether MASQUE, O=Cluvex, C=US"
-          ls -lh keystore.jks
-
       - name: Fetch Multi-Arch Native Engines (arm64, armv7, x86_64)
         run: |
           mkdir -p app/src/main/jniLibs/arm64-v8a
@@ -99,5 +86,6 @@ jobs:
             
             - **Valid Provisioned Identity**: Injected active Cloudflare MASQUE identity keys and profile.
             - **Strict MASQUE HTTP/2 Arguments**: Passed explicit \`--protocol masque\`, \`--h2\`, \`--scan turbo\`, \`--quick-reconnect\`, and \`--masque-config\`.
+            - **Permanent Release Keystore**: All future updates will install seamlessly without signature conflicts.
             - **Universal ABI Support**: Native engines for \`armeabi-v7a\` (Galaxy A10s / budget 32-bit devices), \`arm64-v8a\` (modern phones), and \`x86_64\` (PC emulators).
             - **Full Dual V1/V2 Signatures**: Clean install and upgrade without package conflicts."
