@@ -26,15 +26,41 @@ jobs:
           distribution: 'temurin'
           cache: gradle
 
-      - name: Fetch Verified Native Engines (Aether & hev-socks5-tunnel)
+      - name: Generate Release Keystore
+        run: |
+          keytool -genkeypair -v \
+            -keystore keystore.jks \
+            -alias aetherkey \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -storepass aetherpassword123 \
+            -keypass aetherpassword123 \
+            -dname "CN=Aether MASQUE, O=Cluvex, C=US"
+          ls -lh keystore.jks
+
+      - name: Fetch Multi-Arch Native Engines (arm64, armv7, x86_64)
         run: |
           mkdir -p app/src/main/jniLibs/arm64-v8a
-          echo "[*] Downloading native engine package..."
-          curl -sL https://github.com/patterniha/PattNG/releases/download/2.3.13-P69/PattNG_2.3.13-P69_arm64-v8a.apk -o /tmp/pattng.apk
-          unzip -p /tmp/pattng.apk lib/arm64-v8a/libaether.so > app/src/main/jniLibs/arm64-v8a/libaether.so
-          unzip -p /tmp/pattng.apk lib/arm64-v8a/libhev-socks5-tunnel.so > app/src/main/jniLibs/arm64-v8a/libhev-socks5-tunnel.so
-          chmod +x app/src/main/jniLibs/arm64-v8a/libaether.so
-          ls -lh app/src/main/jniLibs/arm64-v8a/
+          mkdir -p app/src/main/jniLibs/armeabi-v7a
+          mkdir -p app/src/main/jniLibs/x86_64
+          
+          echo "[*] Downloading arm64 engine..."
+          curl -sL https://github.com/patterniha/PattNG/releases/download/2.3.13-P69/PattNG_2.3.13-P69_arm64-v8a.apk -o /tmp/pattng_arm64.apk
+          unzip -p /tmp/pattng_arm64.apk lib/arm64-v8a/libaether.so > app/src/main/jniLibs/arm64-v8a/libaether.so
+          unzip -p /tmp/pattng_arm64.apk lib/arm64-v8a/libhev-socks5-tunnel.so > app/src/main/jniLibs/arm64-v8a/libhev-socks5-tunnel.so
+          
+          echo "[*] Downloading armeabi-v7a engine..."
+          curl -sL https://github.com/patterniha/PattNG/releases/download/2.3.13-P69/PattNG_2.3.13-P69_armeabi-v7a.apk -o /tmp/pattng_armv7.apk
+          unzip -p /tmp/pattng_armv7.apk lib/armeabi-v7a/libaether.so > app/src/main/jniLibs/armeabi-v7a/libaether.so
+          unzip -p /tmp/pattng_armv7.apk lib/armeabi-v7a/libhev-socks5-tunnel.so > app/src/main/jniLibs/armeabi-v7a/libhev-socks5-tunnel.so
+          
+          echo "[*] Downloading x86_64 engine..."
+          curl -sL https://github.com/patterniha/PattNG/releases/download/2.3.13-P69/PattNG_2.3.13-P69_x86_64.apk -o /tmp/pattng_x86_64.apk
+          unzip -p /tmp/pattng_x86_64.apk lib/x86_64/libaether.so > app/src/main/jniLibs/x86_64/libaether.so
+          unzip -p /tmp/pattng_x86_64.apk lib/x86_64/libhev-socks5-tunnel.so > app/src/main/jniLibs/x86_64/libhev-socks5-tunnel.so
+          
+          ls -lh app/src/main/jniLibs/*
 
       - name: Grant Execute Permission to Gradle Wrapper
         run: chmod +x gradlew
@@ -42,32 +68,36 @@ jobs:
       - name: Assemble Release APK
         run: ./gradlew assembleRelease --stacktrace
 
+      - name: Verify APK Signatures (V1 & V2)
+        run: |
+          $ANDROID_HOME/build-tools/34.0.0/apksigner verify --verbose app/build/outputs/apk/release/app-release.apk
+
       - name: Prepare Release Artifact
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/AetherClient-v1.0.0-Android-arm64.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/AetherClient-v1.0.1-Universal.apk
           ls -lh dist/
 
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: AetherClient-Android-arm64
-          path: dist/AetherClient-v1.0.0-Android-arm64.apk
+          name: AetherClient-v1.0.1-Universal
+          path: dist/AetherClient-v1.0.1-Universal.apk
 
       - name: Publish GitHub Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG_NAME="v1.0.0"
+          TAG_NAME="v1.0.1"
           gh release delete $TAG_NAME --yes || true
           git tag -d $TAG_NAME 2>/dev/null || true
           git push origin :refs/tags/$TAG_NAME 2>/dev/null || true
           
-          gh release create $TAG_NAME dist/AetherClient-v1.0.0-Android-arm64.apk \
-            --title "Aether MASQUE Android v1.0.0 (SetProduct Liquid Glass)" \
-            --notes "### Aether MASQUE Android Client v1.0.0
+          gh release create $TAG_NAME dist/AetherClient-v1.0.1-Universal.apk \
+            --title "Aether MASQUE Android v1.0.1 (Universal Multi-Arch + Dual V1/V2 Sign)" \
+            --notes "### Aether MASQUE Android v1.0.1 (Universal)
             
-            - **Design**: Native Jetpack Compose SetProduct Liquid Glass Obsidian UI.
-            - **Engine**: Cloudflare MASQUE HTTP/2 (RFC 9298) on port 443 with Turbo mode.
-            - **Architecture**: 64-bit ARM (`arm64-v8a`) with lossless MTU 1360.
-            - **Routing**: Android VpnService L3 tunnel powered by JNI hev-socks5-tunnel."
+            - **Universal Compatibility**: Supports all architectures: \`arm64-v8a\` (modern phones), \`armeabi-v7a\` (32-bit devices), and \`x86_64\` (PC emulators/WSA).
+            - **Dual Signature (V1 + V2)**: Fully signed with both JAR (v1) and APK Signature Scheme (v2) to prevent 'App not installed' errors across all Android versions.
+            - **Target SDK 33 / Min SDK 26**: Smooth installation from Android 8.0 Oreo up to Android 15+.
+            - **Design**: Native Jetpack Compose SetProduct Liquid Glass Obsidian UI with RTT telemetry and lossless MTU 1360."
