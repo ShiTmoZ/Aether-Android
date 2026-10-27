@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.AetherMASQUE" parent="android:Theme.Material.NoActionBar">
+    <style name="Theme.AetherMasque" parent="android:Theme.Material.NoActionBar">
         <item name="android:statusBarColor">#05070B</item>
         <item name="android:navigationBarColor">#05070B</item>
         <item name="android:windowBackground">#05070B</item>
     </style>
+    <style name="Theme.AetherMASQUE" parent="Theme.AetherMasque" />
 </resources>
