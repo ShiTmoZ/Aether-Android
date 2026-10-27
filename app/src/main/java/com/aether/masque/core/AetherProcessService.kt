@@ -10,7 +10,11 @@ import java.io.File
 import java.io.InputStreamReader
 import java.util.regex.Pattern
 
-class AetherProcessService(private val context: Context) {
+class AetherProcessService(
+    private val context: Context,
+    private val targetPeer: String? = null,
+    private val forceFreshScan: Boolean = false
+) {
     companion object {
         private const val TAG = "AetherProcessService"
         const val SOCKS_PORT = 10808
@@ -22,12 +26,12 @@ class AetherProcessService(private val context: Context) {
 
     private var process: Process? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private val _logs = MutableSharedFlow<String>(extraBufferCapacity = 300)
+    private val _logs = MutableSharedFlow<String>(extraBufferCapacity = 500)
     val logs: SharedFlow<String> = _logs
 
     var lastRtt: String = "-- ms"
         private set
-    var lastGateway: String = "Cloudflare Edge"
+    var lastGateway: String = targetPeer ?: "Cloudflare Edge"
         private set
 
     private fun ensureIdentityFile(): File {
@@ -60,19 +64,33 @@ class AetherProcessService(private val context: Context) {
                     binary.setExecutable(true, false)
                 }
 
-                val args = listOf(
+                val args = mutableListOf(
                     binary.absolutePath,
                     "--protocol", "masque",
                     "--h2",
                     "--ip", "v4",
-                    "--scan", "turbo",
-                    "--quick-reconnect",
+                    "--perf", "high",
                     "--masque-config", identityFile.absolutePath,
                     "--bind", "127.0.0.1:$SOCKS_PORT"
                 )
 
+                if (!targetPeer.isNullOrBlank() && targetPeer != "auto") {
+                    args.add("--peer")
+                    args.add(targetPeer)
+                    _logs.emit("[CORE] Direct Peering Mode: locking to $targetPeer...")
+                } else if (forceFreshScan) {
+                    args.add("--scan")
+                    args.add("balanced")
+                    args.add("--no-quick-reconnect")
+                    _logs.emit("[CORE] Hunt Mode: sweeping Anycast pool for lowest latency edge...")
+                } else {
+                    args.add("--scan")
+                    args.add("turbo")
+                    args.add("--quick-reconnect")
+                    _logs.emit("[CORE] Turbo Anycast Mesh Mode (--perf high)...")
+                }
+
                 Log.i(TAG, "Launching: ${args.joinToString(" ")}")
-                _logs.emit("[CORE] Starting Cloudflare MASQUE HTTP/2 engine...")
 
                 val builder = ProcessBuilder(args)
                     .directory(context.filesDir)
@@ -84,6 +102,7 @@ class AetherProcessService(private val context: Context) {
                     put("AETHER_CONFIG", File(context.filesDir, "aether.toml").absolutePath)
                     put("AETHER_MASQUE_CONFIG", identityFile.absolutePath)
                     put("AETHER_PROTOCOL", "masque")
+                    put("AETHER_PERF_PROFILE", "high")
                 }
 
                 val proc = builder.start()

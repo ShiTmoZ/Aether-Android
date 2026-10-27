@@ -62,30 +62,31 @@ jobs:
       - name: Prepare Release Artifact
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/AetherClient-v1.0.2-Universal.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/AetherClient-v1.0.3-Universal.apk
           ls -lh dist/
 
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: AetherClient-v1.0.2-Universal
-          path: dist/AetherClient-v1.0.2-Universal.apk
+          name: AetherClient-v1.0.3-Universal
+          path: dist/AetherClient-v1.0.3-Universal.apk
 
       - name: Publish GitHub Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG_NAME="v1.0.2"
+          TAG_NAME="v1.0.3"
           gh release delete $TAG_NAME --yes || true
           git tag -d $TAG_NAME 2>/dev/null || true
           git push origin :refs/tags/$TAG_NAME 2>/dev/null || true
           
-          gh release create $TAG_NAME dist/AetherClient-v1.0.2-Universal.apk \
-            --title "Aether MASQUE Android v1.0.2 (Production Fix for MASQUE Config & Handshake)" \
-            --notes "### Aether MASQUE Android v1.0.2
+          gh release create $TAG_NAME dist/AetherClient-v1.0.3-Universal.apk \
+            --title "Aether MASQUE Android v1.0.3 (High-Perf Engine, Server Selector & Edge Hunt)" \
+            --notes "### Aether MASQUE Android v1.0.3
             
-            - **Valid Provisioned Identity**: Injected active Cloudflare MASQUE identity keys and profile.
-            - **Strict MASQUE HTTP/2 Arguments**: Passed explicit \`--protocol masque\`, \`--h2\`, \`--scan turbo\`, \`--quick-reconnect\`, and \`--masque-config\`.
-            - **Permanent Release Keystore**: All future updates will install seamlessly without signature conflicts.
-            - **Universal ABI Support**: Native engines for \`armeabi-v7a\` (Galaxy A10s / budget 32-bit devices), \`arm64-v8a\` (modern phones), and \`x86_64\` (PC emulators).
-            - **Full Dual V1/V2 Signatures**: Clean install and upgrade without package conflicts."
+            - **High-Performance Engine Profile**: Enforced \`--perf high\` overrides budget device constraints, unlocking 512KB socket buffers and maximum worker priority.
+            - **Dedicated Clean Edge Selector**: Quick-switching modal for verified low-latency European Cloudflare Ingress Gateways (Frankfurt, Amsterdam, Stockholm, London, Helsinki, Warsaw).
+            - **Hunt Next Edge Button**: One-tap trigger using \`--scan balanced --no-quick-reconnect\` to discard throttled carrier edges and lock to the cleanest gateway.
+            - **Optimized hev-socks5-tunnel Buffers**: Increased TCP buffer to 128KB and UDP buffer to 512KB for maximal streaming throughput.
+            - **Universal Multi-Arch ABI**: Full native support for \`armeabi-v7a\` (Galaxy A10s / 32-bit), \`arm64-v8a\` (modern phones), and \`x86_64\` (PC emulators).
+            - **Seamless Updates**: Signed with the permanent official release keystore."

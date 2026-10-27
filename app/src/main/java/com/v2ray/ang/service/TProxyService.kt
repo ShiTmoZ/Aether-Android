@@ -45,6 +45,9 @@ class TProxyService(
                   address: 127.0.0.1
                   udp: 'udp'
                 misc:
+                  task-stack-size: 86016
+                  tcp-buffer-size: 131072
+                  udp-recv-buffer-size: 524288
                   tcp-read-write-timeout: 300000
                   udp-read-write-timeout: 60000
                   log-level: warn
@@ -53,7 +56,7 @@ class TProxyService(
             val configFile = File(context.filesDir, "hev-socks5-tunnel.yaml").apply {
                 writeText(configContent)
             }
-            Log.i(TAG, "Starting hev-socks5-tunnel with fd: ${vpnInterface.fd}")
+            Log.i(TAG, "Starting hev-socks5-tunnel with optimized 128KB buffers on fd: ${vpnInterface.fd}")
             TProxyStartService(configFile.absolutePath, vpnInterface.fd)
         } catch (e: Exception) {
             Log.e(TAG, "Error starting hev-socks5-tunnel", e)

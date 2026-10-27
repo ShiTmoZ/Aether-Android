@@ -5,6 +5,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.net.VpnService
 import android.os.Bundle
 import android.widget.Toast
@@ -48,6 +49,25 @@ import androidx.compose.ui.unit.sp
 import com.aether.masque.service.AetherVpnService
 import com.aether.masque.service.AetherVpnService.ConnectionStatus
 
+data class CleanEdge(
+    val id: String,
+    val name: String,
+    val flag: String,
+    val endpoint: String?,
+    val country: String,
+    val latencyHint: String
+)
+
+val CLEAN_EDGES = listOf(
+    CleanEdge("auto", "Auto Turbo Anycast", "⚡", null, "Anycast Mesh", "Dynamic"),
+    CleanEdge("de_frankfurt", "Frankfurt Alpha", "🇩🇪", "162.159.198.4:443", "Germany", "~140 ms"),
+    CleanEdge("nl_amsterdam", "Amsterdam Direct", "🇳🇱", "162.159.198.198:443", "Netherlands", "~145 ms"),
+    CleanEdge("se_stockholm", "Stockholm Edge", "🇸🇪", "162.159.192.1:443", "Sweden", "~155 ms"),
+    CleanEdge("gb_london", "London Prime", "🇬🇧", "162.159.193.5:443", "United Kingdom", "~160 ms"),
+    CleanEdge("fi_helsinki", "Helsinki Gateway", "🇫🇮", "162.159.199.60:443", "Finland", "~150 ms"),
+    CleanEdge("pl_warsaw", "Warsaw Core", "🇵🇱", "162.159.199.133:443", "Poland", "~155 ms")
+)
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -57,10 +77,19 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AetherAppRoot() {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
+    val prefs: SharedPreferences = remember {
+        context.getSharedPreferences("aether_prefs", Context.MODE_PRIVATE)
+    }
+
+    var selectedEdgeId by remember {
+        mutableStateOf(prefs.getString("selected_edge_id", "auto") ?: "auto")
+    }
+    val currentEdge = CLEAN_EDGES.find { it.id == selectedEdgeId } ?: CLEAN_EDGES[0]
 
     val status by AetherVpnService.status.collectAsState()
     val rtt by AetherVpnService.rtt.collectAsState()
@@ -69,15 +98,25 @@ fun AetherAppRoot() {
     val durationSeconds by AetherVpnService.connectedSeconds.collectAsState()
 
     var showLogs by remember { mutableStateOf(false) }
+    var showEdgeSheet by remember { mutableStateOf(false) }
 
     // Launcher for VPN permission dialog
     val vpnLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
-            AetherVpnService.startService(context)
+            AetherVpnService.startService(context, currentEdge.endpoint, false)
         } else {
             Toast.makeText(context, "VPN permission is required to tunnel traffic", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val connectTunnel: (freshScan: Boolean) -> Unit = { freshScan ->
+        val prepareIntent = VpnService.prepare(context)
+        if (prepareIntent != null) {
+            vpnLauncher.launch(prepareIntent)
+        } else {
+            AetherVpnService.startService(context, currentEdge.endpoint, freshScan)
         }
     }
 
@@ -85,17 +124,18 @@ fun AetherAppRoot() {
         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
         when (status) {
             ConnectionStatus.DISCONNECTED, ConnectionStatus.ERROR -> {
-                val prepareIntent = VpnService.prepare(context)
-                if (prepareIntent != null) {
-                    vpnLauncher.launch(prepareIntent)
-                } else {
-                    AetherVpnService.startService(context)
-                }
+                connectTunnel(false)
             }
             ConnectionStatus.CONNECTING, ConnectionStatus.CONNECTED -> {
                 AetherVpnService.stopService(context)
             }
         }
+    }
+
+    val onHuntNext = {
+        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        Toast.makeText(context, "Hunting clean high-speed edge...", Toast.LENGTH_SHORT).show()
+        connectTunnel(true)
     }
 
     Box(
@@ -129,14 +169,14 @@ fun AetherAppRoot() {
                 .fillMaxSize()
                 .statusBarsPadding()
                 .navigationBarsPadding()
-                .padding(horizontal = 20.dp, vertical = 16.dp),
+                .padding(horizontal = 20.dp, vertical = 14.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween
         ) {
             // Header Bar
             HeaderSection(status = status)
 
-            // Center: Optic Lens Button & Status
+            // Center: Optic Lens Button & Edge Selector
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
@@ -146,12 +186,93 @@ fun AetherAppRoot() {
                     onClick = onToggle
                 )
 
-                Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
                 DurationDisplay(
                     status = status,
                     durationSeconds = durationSeconds
                 )
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Edge Selector Card & Hunt Button
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Selected Server Pill
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(Color(0xFF0C1017))
+                            .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
+                            .clickable {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                showEdgeSheet = true
+                            }
+                            .padding(horizontal = 14.dp, vertical = 10.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(text = currentEdge.flag, fontSize = 16.sp)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text(
+                                        text = currentEdge.name,
+                                        color = Color(0xFFF1F5F9),
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Text(
+                                        text = currentEdge.country,
+                                        color = Color(0xFF64748B),
+                                        fontSize = 10.sp
+                                    )
+                                }
+                            }
+                            Icon(
+                                imageVector = Icons.Default.KeyboardArrowDown,
+                                contentDescription = "Select Edge",
+                                tint = Color(0xFF94A3B8),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+
+                    // Hunt Next Edge Button
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(Color(0xFF082F49))
+                            .border(1.dp, Color(0xFF0284C7).copy(alpha = 0.5f), RoundedCornerShape(14.dp))
+                            .clickable(onClick = onHuntNext)
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Bolt,
+                                contentDescription = "Hunt",
+                                tint = Color(0xFF38BDF8),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "HUNT",
+                                color = Color(0xFF38BDF8),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 1.sp
+                            )
+                        }
+                    }
+                }
             }
 
             // Bottom Section: Telemetry Bento + Collapsible Logs
@@ -162,10 +283,11 @@ fun AetherAppRoot() {
                 TelemetryBento(
                     status = status,
                     rtt = rtt,
-                    gateway = gateway
+                    gateway = gateway,
+                    selectedEdge = currentEdge
                 )
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
                 LogDrawerTrigger(
                     logCount = logLines.size,
@@ -190,6 +312,101 @@ fun AetherAppRoot() {
                 }
             }
         }
+
+        // Clean Edge Bottom Sheet Modal
+        if (showEdgeSheet) {
+            ModalBottomSheet(
+                onDismissRequest = { showEdgeSheet = false },
+                containerColor = Color(0xFF070B12),
+                dragHandle = {
+                    Box(
+                        modifier = Modifier
+                            .padding(top = 10.dp, bottom = 6.dp)
+                            .width(40.dp)
+                            .height(4.dp)
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(Color.White.copy(alpha = 0.2f))
+                    )
+                }
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 10.dp)
+                        .navigationBarsPadding()
+                ) {
+                    Text(
+                        text = "SELECT CLOUDFLARE WARP GATEWAY",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        items(CLEAN_EDGES) { edge ->
+                            val isSelected = edge.id == selectedEdgeId
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(if (isSelected) Color(0xFF0F172A) else Color(0xFF0C1017))
+                                    .border(
+                                        1.dp,
+                                        if (isSelected) Color(0xFF38BDF8).copy(alpha = 0.6f) else Color.White.copy(alpha = 0.04f),
+                                        RoundedCornerShape(12.dp)
+                                    )
+                                    .clickable {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        selectedEdgeId = edge.id
+                                        prefs.edit().putString("selected_edge_id", edge.id).apply()
+                                        showEdgeSheet = false
+                                        // If connected, automatically restart tunnel to the new edge
+                                        if (status == ConnectionStatus.CONNECTED || status == ConnectionStatus.CONNECTING) {
+                                            AetherVpnService.startService(context, edge.endpoint, false)
+                                        }
+                                    }
+                                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(text = edge.flag, fontSize = 20.sp)
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Column {
+                                        Text(
+                                            text = edge.name,
+                                            color = if (isSelected) Color(0xFF38BDF8) else Color(0xFFF1F5F9),
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                        Text(
+                                            text = edge.endpoint ?: "Fastest Anycast Discovery",
+                                            color = Color(0xFF64748B),
+                                            fontSize = 10.sp,
+                                            fontFamily = FontFamily.Monospace
+                                        )
+                                    }
+                                }
+
+                                Text(
+                                    text = edge.latencyHint,
+                                    color = if (isSelected) Color(0xFF00E676) else Color(0xFF94A3B8),
+                                    fontSize = 11.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
+            }
+        }
     }
 }
 
@@ -210,19 +427,35 @@ fun HeaderSection(status: ConnectionStatus) {
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 2.sp
             )
-            Text(
-                text = "CLOUDFLARE MASQUE H2",
-                color = Color(0xFF38BDF8),
-                fontSize = 10.sp,
-                fontWeight = FontWeight.SemiBold,
-                letterSpacing = 1.sp
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "CLOUDFLARE MASQUE H2",
+                    color = Color(0xFF38BDF8),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 1.sp
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(Color(0xFF0369A1).copy(alpha = 0.4f))
+                        .padding(horizontal = 4.dp, vertical = 1.dp)
+                ) {
+                    Text(
+                        text = "HIGH-PERF",
+                        color = Color(0xFF7DD3FC),
+                        fontSize = 8.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
         }
 
         // Status Badge Pill
         val (bgColor, borderColor, textColor, label) = when (status) {
             ConnectionStatus.CONNECTED -> Quadruple(
-                Color(0xFF052E16), Color(0xFF10B981), Color(0xFF00E676), "ONLINE · TURBO"
+                Color(0xFF052E16), Color(0xFF10B981), Color(0xFF00E676), "ONLINE · HIGH-PERF"
             )
             ConnectionStatus.CONNECTING -> Quadruple(
                 Color(0xFF082F49), Color(0xFF0284C7), Color(0xFF38BDF8), "CONNECTING..."
@@ -379,7 +612,7 @@ fun DurationDisplay(status: ConnectionStatus, durationSeconds: Long) {
         )
     } else {
         Text(
-            text = if (status == ConnectionStatus.CONNECTING) "ESTABLISHING TUNNEL..." else "TAP TO CONNECT",
+            text = if (status == ConnectionStatus.CONNECTING) "ESTABLISHING HIGH-PERF TUNNEL..." else "TAP TO CONNECT",
             color = Color(0xFF64748B),
             fontSize = 12.sp,
             fontWeight = FontWeight.Medium,
@@ -392,7 +625,8 @@ fun DurationDisplay(status: ConnectionStatus, durationSeconds: Long) {
 fun TelemetryBento(
     status: ConnectionStatus,
     rtt: String,
-    gateway: String
+    gateway: String,
+    selectedEdge: CleanEdge
 ) {
     val isOnline = status == ConnectionStatus.CONNECTED
 
@@ -422,8 +656,8 @@ fun TelemetryBento(
             )
             BentoItem(
                 modifier = Modifier.weight(1f),
-                title = "PROTOCOL",
-                value = "MASQUE H2",
+                title = "ENGINE PROFILE",
+                value = "HIGH-PERF",
                 accentColor = Color(0xFF38BDF8)
             )
         }
@@ -436,14 +670,14 @@ fun TelemetryBento(
         ) {
             BentoItem(
                 modifier = Modifier.weight(1f),
-                title = "GATEWAY",
-                value = if (isOnline) gateway else "162.159.x.x:443",
+                title = "ACTIVE GATEWAY",
+                value = if (isOnline) gateway else (selectedEdge.endpoint ?: "Auto Discovery"),
                 accentColor = Color(0xFFA78BFA)
             )
             BentoItem(
                 modifier = Modifier.weight(1f),
-                title = "MTU / LOSSLESS",
-                value = "1360 (Optimal)",
+                title = "MTU / BUFFERS",
+                value = "1360 / 128KB",
                 accentColor = Color(0xFF34D399)
             )
         }
@@ -476,7 +710,7 @@ fun BentoItem(
             Text(
                 text = value,
                 color = accentColor,
-                fontSize = 13.sp,
+                fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
                 fontFamily = FontFamily.Monospace,
                 maxLines = 1

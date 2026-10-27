@@ -35,6 +35,8 @@ class AetherVpnService : VpnService() {
 
         const val ACTION_CONNECT = "com.aether.masque.ACTION_CONNECT"
         const val ACTION_DISCONNECT = "com.aether.masque.ACTION_DISCONNECT"
+        const val EXTRA_PEER = "com.aether.masque.EXTRA_PEER"
+        const val EXTRA_FRESH_SCAN = "com.aether.masque.EXTRA_FRESH_SCAN"
 
         private val _status = MutableStateFlow(ConnectionStatus.DISCONNECTED)
         val status: StateFlow<ConnectionStatus> = _status.asStateFlow()
@@ -51,9 +53,11 @@ class AetherVpnService : VpnService() {
         private val _connectedSeconds = MutableStateFlow(0L)
         val connectedSeconds: StateFlow<Long> = _connectedSeconds.asStateFlow()
 
-        fun startService(context: Context) {
+        fun startService(context: Context, peer: String? = null, freshScan: Boolean = false) {
             val intent = Intent(context, AetherVpnService::class.java).apply {
                 action = ACTION_CONNECT
+                putExtra(EXTRA_PEER, peer)
+                putExtra(EXTRA_FRESH_SCAN, freshScan)
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
@@ -84,7 +88,9 @@ class AetherVpnService : VpnService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_CONNECT -> {
-                startVpn()
+                val peer = intent.getStringExtra(EXTRA_PEER)
+                val freshScan = intent.getBooleanExtra(EXTRA_FRESH_SCAN, false)
+                startVpn(peer, freshScan)
             }
             ACTION_DISCONNECT -> {
                 stopVpn()
@@ -93,15 +99,17 @@ class AetherVpnService : VpnService() {
         return START_NOT_STICKY
     }
 
-    private fun startVpn() {
+    private fun startVpn(peer: String? = null, freshScan: Boolean = false) {
         if (_status.value == ConnectionStatus.CONNECTING || _status.value == ConnectionStatus.CONNECTED) {
-            return
+            // If already running or connecting, stop and restart
+            stopVpn()
         }
 
         _status.value = ConnectionStatus.CONNECTING
-        startForeground(NOTIFICATION_ID, buildNotification("Connecting to MASQUE..."))
+        val targetLabel = if (!peer.isNullOrBlank() && peer != "auto") peer else "Anycast Mesh"
+        startForeground(NOTIFICATION_ID, buildNotification("Connecting to $targetLabel..."))
 
-        val proc = AetherProcessService(this)
+        val proc = AetherProcessService(this, peer, freshScan)
         processService = proc
 
         // Listen for logs
@@ -167,7 +175,7 @@ class AetherVpnService : VpnService() {
             proxy.start()
 
             _status.value = ConnectionStatus.CONNECTED
-            startForeground(NOTIFICATION_ID, buildNotification("Connected · Cloudflare MASQUE H2"))
+            startForeground(NOTIFICATION_ID, buildNotification("Connected · Cloudflare MASQUE H2 (High Perf)"))
 
             // Start timer
             _connectedSeconds.value = 0L
