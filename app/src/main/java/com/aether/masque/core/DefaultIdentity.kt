@@ -4,22 +4,22 @@ object DefaultIdentity {
     val MASQUE_TOML = """
 device_id = "f102c908-acc1-42db-a6ef-2647df3cac7e"
 access_token = "ddb0686b-8502-4f33-b964-f00702090c38"
-cert_pem = ""${'"'}
+cert_pem = """
 -----BEGIN CERTIFICATE-----
 MIHsMIGToAMCAQICAQAwCgYIKoZIzj0EAwIwADAeFw0yNjEwMjUwOTQ4MzBaFw0y
 NzEwMjUwOTQ4MzBaMAAwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAATymjGvsb/J
 z64PT5dW43MnNjL7nwLRCEbrOvTrrpcpkYuMW20tO4Viv5+8tR22b7NH0QQu63Fg
-D5fxaC7uMC4EMpluginBAMCA0gAMEUCIAC/3Wic0AAsZroxZOEU6ojAtoey+
+D5fxaC7uMC4EMAoGCCqGSM49BAMCA0gAMEUCIBm3Wic0AAsZroxZOEU6ojAtoey+
 ubtQSDpPa3wmP8P0AiEAkzAFeKD4iacQhlqPXmtA39/bvoJjXl7Mhk63UHaQa5s=
 -----END CERTIFICATE-----
-""${'"'}
-key_pem = ""${'"'}
+"""
+key_pem = """
 -----BEGIN PRIVATE KEY-----
 MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgxorTBgIa8sE6WDBZ
-Zi54c04sUFifJRVbOPhHsPVinqhRANCAATymjGvsb/Jz64PT5dW43MnNjL7nwLR
+Zi540c04sUFifJRVbOPhHsPVinqhRANCAATymjGvsb/Jz64PT5dW43MnNjL7nwLR
 CEbrOvTrrpcpkYuMW20tO4Viv5+8tR22b7NH0QQu63FgD5fxaC7uMC4E
 -----END PRIVATE KEY-----
-""${'"'}
+"""
 cert_issued_at = 1792921711
 ipv4 = "172.16.0.2"
 ipv6 = "2606:4700:110:81d0:4700:d90f:ceb4:1bf1"

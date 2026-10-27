@@ -75,29 +75,29 @@ jobs:
       - name: Prepare Release Artifact
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/AetherClient-v1.0.1-Universal.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/AetherClient-v1.0.2-Universal.apk
           ls -lh dist/
 
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: AetherClient-v1.0.1-Universal
-          path: dist/AetherClient-v1.0.1-Universal.apk
+          name: AetherClient-v1.0.2-Universal
+          path: dist/AetherClient-v1.0.2-Universal.apk
 
       - name: Publish GitHub Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG_NAME="v1.0.1"
+          TAG_NAME="v1.0.2"
           gh release delete $TAG_NAME --yes || true
           git tag -d $TAG_NAME 2>/dev/null || true
           git push origin :refs/tags/$TAG_NAME 2>/dev/null || true
           
-          gh release create $TAG_NAME dist/AetherClient-v1.0.1-Universal.apk \
-            --title "Aether MASQUE Android v1.0.1 (Universal Multi-Arch + Dual V1/V2 Sign)" \
-            --notes "### Aether MASQUE Android v1.0.1 (Universal)
+          gh release create $TAG_NAME dist/AetherClient-v1.0.2-Universal.apk \
+            --title "Aether MASQUE Android v1.0.2 (Production Fix for MASQUE Config & Handshake)" \
+            --notes "### Aether MASQUE Android v1.0.2
             
-            - **Universal Compatibility**: Supports all architectures: \`arm64-v8a\` (modern phones), \`armeabi-v7a\` (32-bit devices), and \`x86_64\` (PC emulators/WSA).
-            - **Dual Signature (V1 + V2)**: Fully signed with both JAR (v1) and APK Signature Scheme (v2) to prevent 'App not installed' errors across all Android versions.
-            - **Target SDK 33 / Min SDK 26**: Smooth installation from Android 8.0 Oreo up to Android 15+.
-            - **Design**: Native Jetpack Compose SetProduct Liquid Glass Obsidian UI with RTT telemetry and lossless MTU 1360."
+            - **Valid Provisioned Identity**: Injected active Cloudflare MASQUE identity keys and profile.
+            - **Strict MASQUE HTTP/2 Arguments**: Passed explicit \`--protocol masque\`, \`--h2\`, \`--scan turbo\`, \`--quick-reconnect\`, and \`--masque-config\`.
+            - **Universal ABI Support**: Native engines for \`armeabi-v7a\` (Galaxy A10s / budget 32-bit devices), \`arm64-v8a\` (modern phones), and \`x86_64\` (PC emulators).
+            - **Full Dual V1/V2 Signatures**: Clean install and upgrade without package conflicts."
