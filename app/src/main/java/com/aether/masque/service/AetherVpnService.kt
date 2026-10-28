@@ -37,6 +37,7 @@ class AetherVpnService : VpnService() {
         const val ACTION_DISCONNECT = "com.aether.masque.ACTION_DISCONNECT"
         const val EXTRA_PEER = "com.aether.masque.EXTRA_PEER"
         const val EXTRA_FRESH_SCAN = "com.aether.masque.EXTRA_FRESH_SCAN"
+        const val EXTRA_MIM = "com.aether.masque.EXTRA_MIM"
 
         private val _status = MutableStateFlow(ConnectionStatus.DISCONNECTED)
         val status: StateFlow<ConnectionStatus> = _status.asStateFlow()
@@ -47,17 +48,21 @@ class AetherVpnService : VpnService() {
         private val _gateway = MutableStateFlow("162.159.198.x:443")
         val gateway: StateFlow<String> = _gateway.asStateFlow()
 
+        private val _isMimActive = MutableStateFlow(false)
+        val isMimActive: StateFlow<Boolean> = _isMimActive.asStateFlow()
+
         private val _logLines = MutableStateFlow<List<String>>(emptyList())
         val logLines: StateFlow<List<String>> = _logLines.asStateFlow()
 
         private val _connectedSeconds = MutableStateFlow(0L)
         val connectedSeconds: StateFlow<Long> = _connectedSeconds.asStateFlow()
 
-        fun startService(context: Context, peer: String? = null, freshScan: Boolean = false) {
+        fun startService(context: Context, peer: String? = null, freshScan: Boolean = false, enableMim: Boolean = false) {
             val intent = Intent(context, AetherVpnService::class.java).apply {
                 action = ACTION_CONNECT
                 putExtra(EXTRA_PEER, peer)
                 putExtra(EXTRA_FRESH_SCAN, freshScan)
+                putExtra(EXTRA_MIM, enableMim)
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
@@ -79,6 +84,7 @@ class AetherVpnService : VpnService() {
     private var vpnInterface: ParcelFileDescriptor? = null
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var durationJob: Job? = null
+    private var currentMim = false
 
     override fun onCreate() {
         super.onCreate()
@@ -90,7 +96,8 @@ class AetherVpnService : VpnService() {
             ACTION_CONNECT -> {
                 val peer = intent.getStringExtra(EXTRA_PEER)
                 val freshScan = intent.getBooleanExtra(EXTRA_FRESH_SCAN, false)
-                startVpn(peer, freshScan)
+                val enableMim = intent.getBooleanExtra(EXTRA_MIM, false)
+                startVpn(peer, freshScan, enableMim)
             }
             ACTION_DISCONNECT -> {
                 stopVpn()
@@ -99,17 +106,19 @@ class AetherVpnService : VpnService() {
         return START_NOT_STICKY
     }
 
-    private fun startVpn(peer: String? = null, freshScan: Boolean = false) {
+    private fun startVpn(peer: String? = null, freshScan: Boolean = false, enableMim: Boolean = false) {
         if (_status.value == ConnectionStatus.CONNECTING || _status.value == ConnectionStatus.CONNECTED) {
-            // If already running or connecting, stop and restart
             stopVpn()
         }
 
+        currentMim = enableMim
+        _isMimActive.value = enableMim
         _status.value = ConnectionStatus.CONNECTING
         val targetLabel = if (!peer.isNullOrBlank() && peer != "auto") peer else "Anycast Mesh"
-        startForeground(NOTIFICATION_ID, buildNotification("Connecting to $targetLabel..."))
+        val modeStr = if (enableMim) "MIM Dual-Hop" else "MASQUE H2"
+        startForeground(NOTIFICATION_ID, buildNotification("Connecting ($modeStr) to $targetLabel..."))
 
-        val proc = AetherProcessService(this, peer, freshScan)
+        val proc = AetherProcessService(this, peer, freshScan, enableMim)
         processService = proc
 
         // Listen for logs
@@ -151,7 +160,7 @@ class AetherVpnService : VpnService() {
                 .addRoute("0.0.0.0", 0)
                 .addDnsServer("1.1.1.1")
                 .addDnsServer("1.0.0.1")
-                .setSession("Aether MASQUE")
+                .setSession(if (currentMim) "Aether MIM Dual-Hop" else "Aether MASQUE")
                 .setBlocking(false)
 
             // Critical: bypass our own package so Aether core connects directly without routing loop
@@ -175,7 +184,8 @@ class AetherVpnService : VpnService() {
             proxy.start()
 
             _status.value = ConnectionStatus.CONNECTED
-            startForeground(NOTIFICATION_ID, buildNotification("Connected · Cloudflare MASQUE H2 (High Perf)"))
+            val statusTitle = if (currentMim) "Connected · MIM Dual-Hop (Foreign Exit)" else "Connected · Cloudflare MASQUE H2"
+            startForeground(NOTIFICATION_ID, buildNotification(statusTitle))
 
             // Start timer
             _connectedSeconds.value = 0L

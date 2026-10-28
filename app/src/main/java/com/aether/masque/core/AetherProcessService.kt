@@ -13,7 +13,8 @@ import java.util.regex.Pattern
 class AetherProcessService(
     private val context: Context,
     private val targetPeer: String? = null,
-    private val forceFreshScan: Boolean = false
+    private val forceFreshScan: Boolean = false,
+    private val enableMim: Boolean = false
 ) {
     companion object {
         private const val TAG = "AetherProcessService"
@@ -64,30 +65,55 @@ class AetherProcessService(
                     binary.setExecutable(true, false)
                 }
 
+                // Dynamic hardware-aware profiling:
+                // Prevents CPU thrashing and out-of-order stalls on budget devices (e.g. Helio P22 / A10s)
+                // while maintaining ultra-fast socket queues on mid-range and flagship processors.
+                val maxMemMb = Runtime.getRuntime().maxMemory() / (1024 * 1024)
+                val cores = Runtime.getRuntime().availableProcessors()
+                val perfProfile = when {
+                    cores <= 4 || maxMemMb < 256 -> "low"
+                    else -> "medium" // "medium" is optimal for mobile Android devices to avoid excessive server thread pool spawning
+                }
+
                 val args = mutableListOf(
                     binary.absolutePath,
-                    "--protocol", "masque",
                     "--h2",
                     "--ip", "v4",
-                    "--perf", "high",
+                    "--perf", perfProfile,
+                    "--no-data-check",
                     "--masque-config", identityFile.absolutePath,
                     "--bind", "127.0.0.1:$SOCKS_PORT"
                 )
 
-                if (!targetPeer.isNullOrBlank() && targetPeer != "auto") {
-                    args.add("--peer")
-                    args.add(targetPeer)
-                    _logs.emit("[CORE] Direct Peering Mode: locking to $targetPeer...")
-                } else if (forceFreshScan) {
-                    args.add("--scan")
-                    args.add("balanced")
-                    args.add("--no-quick-reconnect")
-                    _logs.emit("[CORE] Hunt Mode: sweeping Anycast pool for lowest latency edge...")
+                if (enableMim) {
+                    args.add("--mim")
+                    if (!targetPeer.isNullOrBlank() && targetPeer != "auto") {
+                        args.add("--mim-outer")
+                        args.add(targetPeer)
+                        _logs.emit("[CORE] MIM Dual-Hop: Outer Edge $targetPeer, Exit IP -> Europe...")
+                    } else {
+                        args.add("--mim-scan")
+                        _logs.emit("[CORE] MIM Dual-Hop: Dynamic Mesh, Exit IP -> Europe...")
+                    }
                 } else {
-                    args.add("--scan")
-                    args.add("turbo")
-                    args.add("--quick-reconnect")
-                    _logs.emit("[CORE] Turbo Anycast Mesh Mode (--perf high)...")
+                    args.add("--protocol")
+                    args.add("masque")
+
+                    if (!targetPeer.isNullOrBlank() && targetPeer != "auto") {
+                        args.add("--peer")
+                        args.add(targetPeer)
+                        _logs.emit("[CORE] Direct Peering Mode: locking to $targetPeer...")
+                    } else if (forceFreshScan) {
+                        args.add("--scan")
+                        args.add("balanced")
+                        args.add("--no-quick-reconnect")
+                        _logs.emit("[CORE] Hunt Mode: sweeping Anycast pool for lowest latency edge...")
+                    } else {
+                        args.add("--scan")
+                        args.add("turbo")
+                        args.add("--quick-reconnect")
+                        _logs.emit("[CORE] Turbo Anycast Mesh Mode (Profile: $perfProfile)...")
+                    }
                 }
 
                 Log.i(TAG, "Launching: ${args.joinToString(" ")}")
@@ -101,8 +127,8 @@ class AetherProcessService(
                     put("TMPDIR", context.cacheDir.absolutePath)
                     put("AETHER_CONFIG", File(context.filesDir, "aether.toml").absolutePath)
                     put("AETHER_MASQUE_CONFIG", identityFile.absolutePath)
-                    put("AETHER_PROTOCOL", "masque")
-                    put("AETHER_PERF_PROFILE", "high")
+                    put("AETHER_PROTOCOL", if (enableMim) "mim" else "masque")
+                    put("AETHER_PERF_PROFILE", perfProfile)
                 }
 
                 val proc = builder.start()

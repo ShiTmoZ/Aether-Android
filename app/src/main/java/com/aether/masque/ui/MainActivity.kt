@@ -91,9 +91,14 @@ fun AetherAppRoot() {
     }
     val currentEdge = CLEAN_EDGES.find { it.id == selectedEdgeId } ?: CLEAN_EDGES[0]
 
+    var isMimEnabled by remember {
+        mutableStateOf(prefs.getBoolean("is_mim_enabled", false))
+    }
+
     val status by AetherVpnService.status.collectAsState()
     val rtt by AetherVpnService.rtt.collectAsState()
     val gateway by AetherVpnService.gateway.collectAsState()
+    val isMimActive by AetherVpnService.isMimActive.collectAsState()
     val logLines by AetherVpnService.logLines.collectAsState()
     val durationSeconds by AetherVpnService.connectedSeconds.collectAsState()
 
@@ -105,7 +110,7 @@ fun AetherAppRoot() {
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
-            AetherVpnService.startService(context, currentEdge.endpoint, false)
+            AetherVpnService.startService(context, currentEdge.endpoint, false, isMimEnabled)
         } else {
             Toast.makeText(context, "VPN permission is required to tunnel traffic", Toast.LENGTH_SHORT).show()
         }
@@ -116,7 +121,7 @@ fun AetherAppRoot() {
         if (prepareIntent != null) {
             vpnLauncher.launch(prepareIntent)
         } else {
-            AetherVpnService.startService(context, currentEdge.endpoint, freshScan)
+            AetherVpnService.startService(context, currentEdge.endpoint, freshScan, isMimEnabled)
         }
     }
 
@@ -136,6 +141,15 @@ fun AetherAppRoot() {
         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
         Toast.makeText(context, "Hunting clean high-speed edge...", Toast.LENGTH_SHORT).show()
         connectTunnel(true)
+    }
+
+    val onToggleMim = { enabled: Boolean ->
+        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        isMimEnabled = enabled
+        prefs.edit().putBoolean("is_mim_enabled", enabled).apply()
+        if (status == ConnectionStatus.CONNECTED || status == ConnectionStatus.CONNECTING) {
+            AetherVpnService.startService(context, currentEdge.endpoint, false, enabled)
+        }
     }
 
     Box(
@@ -174,7 +188,7 @@ fun AetherAppRoot() {
             verticalArrangement = Arrangement.SpaceBetween
         ) {
             // Header Bar
-            HeaderSection(status = status)
+            HeaderSection(status = status, isMim = isMimEnabled)
 
             // Center: Optic Lens Button & Edge Selector
             Column(
@@ -183,10 +197,11 @@ fun AetherAppRoot() {
             ) {
                 OpticLensButton(
                     status = status,
+                    isMim = isMimEnabled,
                     onClick = onToggle
                 )
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
                 DurationDisplay(
                     status = status,
@@ -273,6 +288,79 @@ fun AetherAppRoot() {
                         }
                     }
                 }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // MASQUE-in-MASQUE (MIM) Dual-Hop Toggle Card
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(if (isMimEnabled) Color(0xFF130D24) else Color(0xFF0C1017))
+                        .border(
+                            1.dp,
+                            if (isMimEnabled) Color(0xFFA78BFA).copy(alpha = 0.4f) else Color.White.copy(alpha = 0.06f),
+                            RoundedCornerShape(14.dp)
+                        )
+                        .clickable { onToggleMim(!isMimEnabled) }
+                        .padding(horizontal = 14.dp, vertical = 10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (isMimEnabled) Color(0xFF7C3AED).copy(alpha = 0.3f) else Color(0xFF1E293B)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = if (isMimEnabled) "🌐" else "🔒",
+                                    fontSize = 14.sp
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = "MASQUE-in-MASQUE (MIM)",
+                                        color = if (isMimEnabled) Color(0xFFE9D5FF) else Color(0xFFF1F5F9),
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .background(if (isMimEnabled) Color(0xFF7C3AED) else Color(0xFF334155))
+                                            .padding(horizontal = 5.dp, vertical = 1.dp)
+                                    ) {
+                                        Text(
+                                            text = if (isMimEnabled) "DUAL-HOP" else "OFF",
+                                            color = Color.White,
+                                            fontSize = 8.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                                Text(
+                                    text = if (isMimEnabled) "Exit IP: Routed to Europe (DE/NL)" else "Exit IP: Localized Cloudflare Privacy",
+                                    color = if (isMimEnabled) Color(0xFFC084FC) else Color(0xFF64748B),
+                                    fontSize = 10.sp
+                                )
+                            }
+                        }
+
+                        CyberSwitch(
+                            checked = isMimEnabled,
+                            onCheckedChange = onToggleMim
+                        )
+                    }
+                }
             }
 
             // Bottom Section: Telemetry Bento + Collapsible Logs
@@ -284,10 +372,11 @@ fun AetherAppRoot() {
                     status = status,
                     rtt = rtt,
                     gateway = gateway,
-                    selectedEdge = currentEdge
+                    selectedEdge = currentEdge,
+                    isMim = isMimEnabled
                 )
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
                 LogDrawerTrigger(
                     logCount = logLines.size,
@@ -365,9 +454,8 @@ fun AetherAppRoot() {
                                         selectedEdgeId = edge.id
                                         prefs.edit().putString("selected_edge_id", edge.id).apply()
                                         showEdgeSheet = false
-                                        // If connected, automatically restart tunnel to the new edge
                                         if (status == ConnectionStatus.CONNECTED || status == ConnectionStatus.CONNECTING) {
-                                            AetherVpnService.startService(context, edge.endpoint, false)
+                                            AetherVpnService.startService(context, edge.endpoint, false, isMimEnabled)
                                         }
                                     }
                                     .padding(horizontal = 14.dp, vertical = 12.dp),
@@ -411,7 +499,40 @@ fun AetherAppRoot() {
 }
 
 @Composable
-fun HeaderSection(status: ConnectionStatus) {
+fun CyberSwitch(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    val thumbOffset by animateDpAsState(
+        targetValue = if (checked) 20.dp else 2.dp,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "thumbOffset"
+    )
+    val trackBg = if (checked) Color(0xFF7C3AED) else Color(0xFF1E293B)
+    val thumbColor = if (checked) Color(0xFFF3E8FF) else Color(0xFF94A3B8)
+
+    Box(
+        modifier = Modifier
+            .width(44.dp)
+            .height(24.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(trackBg)
+            .border(1.dp, if (checked) Color(0xFFA78BFA) else Color(0xFF334155), RoundedCornerShape(12.dp))
+            .clickable { onCheckedChange(!checked) },
+        contentAlignment = Alignment.CenterStart
+    ) {
+        Box(
+            modifier = Modifier
+                .padding(start = thumbOffset)
+                .size(20.dp)
+                .clip(CircleShape)
+                .background(thumbColor)
+        )
+    }
+}
+
+@Composable
+fun HeaderSection(status: ConnectionStatus, isMim: Boolean) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -429,8 +550,8 @@ fun HeaderSection(status: ConnectionStatus) {
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = "CLOUDFLARE MASQUE H2",
-                    color = Color(0xFF38BDF8),
+                    text = if (isMim) "MIM DUAL-HOP H2" else "CLOUDFLARE MASQUE H2",
+                    color = if (isMim) Color(0xFFC084FC) else Color(0xFF38BDF8),
                     fontSize = 10.sp,
                     fontWeight = FontWeight.SemiBold,
                     letterSpacing = 1.sp
@@ -439,12 +560,12 @@ fun HeaderSection(status: ConnectionStatus) {
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(3.dp))
-                        .background(Color(0xFF0369A1).copy(alpha = 0.4f))
+                        .background(if (isMim) Color(0xFF581C87).copy(alpha = 0.5f) else Color(0xFF0369A1).copy(alpha = 0.4f))
                         .padding(horizontal = 4.dp, vertical = 1.dp)
                 ) {
                     Text(
-                        text = "HIGH-PERF",
-                        color = Color(0xFF7DD3FC),
+                        text = "ADAPTIVE",
+                        color = if (isMim) Color(0xFFE9D5FF) else Color(0xFF7DD3FC),
                         fontSize = 8.sp,
                         fontWeight = FontWeight.Bold
                     )
@@ -455,7 +576,7 @@ fun HeaderSection(status: ConnectionStatus) {
         // Status Badge Pill
         val (bgColor, borderColor, textColor, label) = when (status) {
             ConnectionStatus.CONNECTED -> Quadruple(
-                Color(0xFF052E16), Color(0xFF10B981), Color(0xFF00E676), "ONLINE · HIGH-PERF"
+                Color(0xFF052E16), Color(0xFF10B981), Color(0xFF00E676), if (isMim) "MIM ONLINE" else "ONLINE · H2"
             )
             ConnectionStatus.CONNECTING -> Quadruple(
                 Color(0xFF082F49), Color(0xFF0284C7), Color(0xFF38BDF8), "CONNECTING..."
@@ -498,6 +619,7 @@ fun HeaderSection(status: ConnectionStatus) {
 @Composable
 fun OpticLensButton(
     status: ConnectionStatus,
+    isMim: Boolean,
     onClick: () -> Unit
 ) {
     val isConnected = status == ConnectionStatus.CONNECTED
@@ -526,7 +648,7 @@ fun OpticLensButton(
 
     Box(
         contentAlignment = Alignment.Center,
-        modifier = Modifier.size(190.dp)
+        modifier = Modifier.size(180.dp)
     ) {
         // Radar Wave
         if (isConnected || isConnecting) {
@@ -536,8 +658,11 @@ fun OpticLensButton(
                     .scale(pulseScale)
             ) {
                 drawCircle(
-                    color = if (isConnected) Color(0xFF00E676).copy(alpha = pulseAlpha)
-                    else Color(0xFF38BDF8).copy(alpha = pulseAlpha),
+                    color = when {
+                        isConnected && isMim -> Color(0xFFA78BFA).copy(alpha = pulseAlpha)
+                        isConnected -> Color(0xFF00E676).copy(alpha = pulseAlpha)
+                        else -> Color(0xFF38BDF8).copy(alpha = pulseAlpha)
+                    },
                     style = Stroke(width = 2.dp.toPx())
                 )
             }
@@ -545,6 +670,9 @@ fun OpticLensButton(
 
         // Liquid Glass Meniscus Ring & Lens Core
         val lensBrush = when {
+            isConnected && isMim -> Brush.radialGradient(
+                colors = listOf(Color(0xFF4C1D95), Color(0xFF2E1065), Color(0xFF130D24))
+            )
             isConnected -> Brush.radialGradient(
                 colors = listOf(Color(0xFF064E3B), Color(0xFF022C22), Color(0xFF011A14))
             )
@@ -557,6 +685,9 @@ fun OpticLensButton(
         }
 
         val borderBrush = when {
+            isConnected && isMim -> Brush.linearGradient(
+                listOf(Color(0xFFC084FC), Color(0xFF7C3AED).copy(alpha = 0.4f), Color.White.copy(alpha = 0.8f))
+            )
             isConnected -> Brush.linearGradient(
                 listOf(Color(0xFF00E676), Color(0xFF00E676).copy(alpha = 0.3f), Color.White.copy(alpha = 0.8f))
             )
@@ -570,7 +701,7 @@ fun OpticLensButton(
 
         Box(
             modifier = Modifier
-                .size(150.dp)
+                .size(144.dp)
                 .clip(CircleShape)
                 .background(lensBrush)
                 .border(2.dp, borderBrush, CircleShape)
@@ -585,11 +716,12 @@ fun OpticLensButton(
                 imageVector = Icons.Default.PowerSettingsNew,
                 contentDescription = "Toggle",
                 tint = when {
+                    isConnected && isMim -> Color(0xFFE9D5FF)
                     isConnected -> Color(0xFF00E676)
                     isConnecting -> Color(0xFF38BDF8)
                     else -> Color(0xFF64748B)
                 },
-                modifier = Modifier.size(54.dp)
+                modifier = Modifier.size(50.dp)
             )
         }
     }
@@ -612,7 +744,7 @@ fun DurationDisplay(status: ConnectionStatus, durationSeconds: Long) {
         )
     } else {
         Text(
-            text = if (status == ConnectionStatus.CONNECTING) "ESTABLISHING HIGH-PERF TUNNEL..." else "TAP TO CONNECT",
+            text = if (status == ConnectionStatus.CONNECTING) "ESTABLISHING SECURE TUNNEL..." else "TAP TO CONNECT",
             color = Color(0xFF64748B),
             fontSize = 12.sp,
             fontWeight = FontWeight.Medium,
@@ -626,23 +758,24 @@ fun TelemetryBento(
     status: ConnectionStatus,
     rtt: String,
     gateway: String,
-    selectedEdge: CleanEdge
+    selectedEdge: CleanEdge,
+    isMim: Boolean
 ) {
     val isOnline = status == ConnectionStatus.CONNECTED
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
+            .clip(RoundedCornerShape(18.dp))
             .background(Color(0xFF0C1017).copy(alpha = 0.9f))
             .border(
                 1.dp,
                 Brush.linearGradient(
-                    listOf(Color.White.copy(alpha = 0.15f), Color.White.copy(alpha = 0.03f))
+                    listOf(Color.White.copy(alpha = 0.12f), Color.White.copy(alpha = 0.02f))
                 ),
-                RoundedCornerShape(20.dp)
+                RoundedCornerShape(18.dp)
             )
-            .padding(14.dp)
+            .padding(12.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -650,19 +783,19 @@ fun TelemetryBento(
         ) {
             BentoItem(
                 modifier = Modifier.weight(1f),
+                title = "TUNNEL MODE",
+                value = if (isMim) "MIM DUAL-HOP" else "MASQUE H2",
+                accentColor = if (isMim) Color(0xFFC084FC) else Color(0xFF38BDF8)
+            )
+            BentoItem(
+                modifier = Modifier.weight(1f),
                 title = "LATENCY (RTT)",
                 value = if (isOnline) rtt else "-- ms",
                 accentColor = if (isOnline) Color(0xFF00E676) else Color(0xFF64748B)
             )
-            BentoItem(
-                modifier = Modifier.weight(1f),
-                title = "ENGINE PROFILE",
-                value = "HIGH-PERF",
-                accentColor = Color(0xFF38BDF8)
-            )
         }
 
-        Spacer(modifier = Modifier.height(10.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -670,15 +803,15 @@ fun TelemetryBento(
         ) {
             BentoItem(
                 modifier = Modifier.weight(1f),
-                title = "ACTIVE GATEWAY",
-                value = if (isOnline) gateway else (selectedEdge.endpoint ?: "Auto Discovery"),
-                accentColor = Color(0xFFA78BFA)
+                title = "EGRESS / EXIT IP",
+                value = if (isMim) "EUROPE (DE/NL)" else "LOCALIZED PRIVACY",
+                accentColor = if (isMim) Color(0xFF34D399) else Color(0xFF94A3B8)
             )
             BentoItem(
                 modifier = Modifier.weight(1f),
-                title = "MTU / BUFFERS",
-                value = "1360 / 128KB",
-                accentColor = Color(0xFF34D399)
+                title = "INGRESS EDGE",
+                value = if (isOnline) gateway else (selectedEdge.endpoint ?: "Auto Mesh"),
+                accentColor = Color(0xFFA78BFA)
             )
         }
     }
@@ -693,10 +826,10 @@ fun BentoItem(
 ) {
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(12.dp))
             .background(Color(0xFF080C13))
-            .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(14.dp))
-            .padding(12.dp)
+            .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
+            .padding(10.dp)
     ) {
         Column {
             Text(
@@ -706,11 +839,11 @@ fun BentoItem(
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 1.sp
             )
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(3.dp))
             Text(
                 text = value,
                 color = accentColor,
-                fontSize = 12.sp,
+                fontSize = 11.sp,
                 fontWeight = FontWeight.SemiBold,
                 fontFamily = FontFamily.Monospace,
                 maxLines = 1
@@ -732,7 +865,7 @@ fun LogDrawerTrigger(
             .background(Color(0xFF0C1017))
             .border(1.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(12.dp))
             .clickable(onClick = onToggle)
-            .padding(horizontal = 14.dp, vertical = 10.dp),
+            .padding(horizontal = 14.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -747,7 +880,7 @@ fun LogDrawerTrigger(
             Text(
                 text = "Diagnostic Console",
                 color = Color(0xFFCBD5E1),
-                fontSize = 12.sp,
+                fontSize = 11.sp,
                 fontWeight = FontWeight.Medium
             )
             Spacer(modifier = Modifier.width(8.dp))
@@ -791,8 +924,8 @@ fun DiagnosticLogWindow(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(200.dp)
-            .padding(top = 8.dp)
+            .height(180.dp)
+            .padding(top = 6.dp)
             .clip(RoundedCornerShape(14.dp))
             .background(Color(0xFF030508))
             .border(1.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(14.dp))
@@ -815,7 +948,7 @@ fun DiagnosticLogWindow(
                 items(logs) { line ->
                     val color = when {
                         line.contains("[CORE]") -> Color(0xFF8DB4F5)
-                        line.contains("[MASQUE]") -> Color(0xFFB7A4F2)
+                        line.contains("[MASQUE]") || line.contains("MIM") -> Color(0xFFC084FC)
                         line.contains("[TUN]") -> Color(0xFF7FD1BE)
                         line.contains("[ERR]") || line.contains("error") -> Color(0xFFFF6B6B)
                         else -> Color(0xFF94A3B8)

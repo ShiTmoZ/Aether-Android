@@ -62,31 +62,31 @@ jobs:
       - name: Prepare Release Artifact
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/AetherClient-v1.0.3-Universal.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/AetherClient-v1.0.4-Universal.apk
           ls -lh dist/
 
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: AetherClient-v1.0.3-Universal
-          path: dist/AetherClient-v1.0.3-Universal.apk
+          name: AetherClient-v1.0.4-Universal
+          path: dist/AetherClient-v1.0.4-Universal.apk
 
       - name: Publish GitHub Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG_NAME="v1.0.3"
+          TAG_NAME="v1.0.4"
           gh release delete $TAG_NAME --yes || true
           git tag -d $TAG_NAME 2>/dev/null || true
           git push origin :refs/tags/$TAG_NAME 2>/dev/null || true
           
-          gh release create $TAG_NAME dist/AetherClient-v1.0.3-Universal.apk \
-            --title "Aether MASQUE Android v1.0.3 (High-Perf Engine, Server Selector & Edge Hunt)" \
-            --notes "### Aether MASQUE Android v1.0.3
+          gh release create $TAG_NAME dist/AetherClient-v1.0.4-Universal.apk \
+            --title "Aether MASQUE Android v1.0.4 (MASQUE-in-MASQUE Dual-Hop, Adaptive Engine & Universal Optimization)" \
+            --notes "### Aether MASQUE Android v1.0.4
             
-            - **High-Performance Engine Profile**: Enforced \`--perf high\` overrides budget device constraints, unlocking 512KB socket buffers and maximum worker priority.
-            - **Dedicated Clean Edge Selector**: Quick-switching modal for verified low-latency European Cloudflare Ingress Gateways (Frankfurt, Amsterdam, Stockholm, London, Helsinki, Warsaw).
-            - **Hunt Next Edge Button**: One-tap trigger using \`--scan balanced --no-quick-reconnect\` to discard throttled carrier edges and lock to the cleanest gateway.
-            - **Optimized hev-socks5-tunnel Buffers**: Increased TCP buffer to 128KB and UDP buffer to 512KB for maximal streaming throughput.
-            - **Universal Multi-Arch ABI**: Full native support for \`armeabi-v7a\` (Galaxy A10s / 32-bit), \`arm64-v8a\` (modern phones), and \`x86_64\` (PC emulators).
-            - **Seamless Updates**: Signed with the permanent official release keystore."
+            - **MASQUE-in-MASQUE (MIM) Dual-Hop Tunneling**: Optional one-tap toggle for dual-layer nested HTTP/2 encapsulation (\`--mim\`). Egress traffic is routed from Cloudflare ingress edge to European exit points (Germany/Netherlands), ensuring European GeoIP on all geo-restricted services.
+            - **Hardware-Aware Adaptive Engine Profile**: Replaced monolithic high-server threading with dynamic hardware profiling (\`low\` for 32-bit/entry-level SoC like Galaxy A10s Helio P22, \`medium\` for mid-range/flagship mobile CPUs) to eliminate memory thrashing, CPU lockups, and kernel context-switching lag.
+            - **Zero-Latency Handshake Initiation**: Added \`--no-data-check\` and smart reconnect caching to bypass initial verification stalls, cutting 2-5 seconds off connection startup.
+            - **Dynamic Memory-Aware TProxy Buffers**: Smart scaling of \`hev-socks5-tunnel\` coroutine stack and socket buffers based on runtime heap memory.
+            - **Leak-Proof Routing**: Hardened IPv4 routing matrix with \`-4\` and cellular IPv6 leak blocking.
+            - **Cyberpunk UI Polish**: Added neon purple dual-hop active indicators, dynamic state morphing, and haptic feedback."
