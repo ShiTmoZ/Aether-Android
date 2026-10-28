@@ -11,8 +11,8 @@ android {
         applicationId = "com.aether.masque"
         minSdk = 26
         targetSdk = 33
-        versionCode = 5
-        versionName = "1.0.4"
+        versionCode = 6
+        versionName = "1.0.5"
 
         ndk {
             abiFilters.addAll(listOf("arm64-v8a", "armeabi-v7a", "x86_64"))

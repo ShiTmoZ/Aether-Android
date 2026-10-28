@@ -62,31 +62,30 @@ jobs:
       - name: Prepare Release Artifact
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/AetherClient-v1.0.4-Universal.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/AetherClient-v1.0.5-Universal.apk
           ls -lh dist/
 
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: AetherClient-v1.0.4-Universal
-          path: dist/AetherClient-v1.0.4-Universal.apk
+          name: AetherClient-v1.0.5-Universal
+          path: dist/AetherClient-v1.0.5-Universal.apk
 
       - name: Publish GitHub Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG_NAME="v1.0.4"
+          TAG_NAME="v1.0.5"
           gh release delete $TAG_NAME --yes || true
           git tag -d $TAG_NAME 2>/dev/null || true
           git push origin :refs/tags/$TAG_NAME 2>/dev/null || true
           
-          gh release create $TAG_NAME dist/AetherClient-v1.0.4-Universal.apk \
-            --title "Aether MASQUE Android v1.0.4 (MASQUE-in-MASQUE Dual-Hop, Adaptive Engine & Universal Optimization)" \
-            --notes "### Aether MASQUE Android v1.0.4
+          gh release create $TAG_NAME dist/AetherClient-v1.0.5-Universal.apk \
+            --title "Aether MASQUE Android v1.0.5 (Triple Tunnel Architecture: GOOL Europe Exit, DIRECT & MIM Subnet Split)" \
+            --notes "### Aether MASQUE Android v1.0.5
             
-            - **MASQUE-in-MASQUE (MIM) Dual-Hop Tunneling**: Optional one-tap toggle for dual-layer nested HTTP/2 encapsulation (\`--mim\`). Egress traffic is routed from Cloudflare ingress edge to European exit points (Germany/Netherlands), ensuring European GeoIP on all geo-restricted services.
-            - **Hardware-Aware Adaptive Engine Profile**: Replaced monolithic high-server threading with dynamic hardware profiling (\`low\` for 32-bit/entry-level SoC like Galaxy A10s Helio P22, \`medium\` for mid-range/flagship mobile CPUs) to eliminate memory thrashing, CPU lockups, and kernel context-switching lag.
-            - **Zero-Latency Handshake Initiation**: Added \`--no-data-check\` and smart reconnect caching to bypass initial verification stalls, cutting 2-5 seconds off connection startup.
-            - **Dynamic Memory-Aware TProxy Buffers**: Smart scaling of \`hev-socks5-tunnel\` coroutine stack and socket buffers based on runtime heap memory.
-            - **Leak-Proof Routing**: Hardened IPv4 routing matrix with \`-4\` and cellular IPv6 leak blocking.
-            - **Cyberpunk UI Polish**: Added neon purple dual-hop active indicators, dynamic state morphing, and haptic feedback."
+            - **GOOL Protocol Mode**: Outer MASQUE H2 bypass + Inner Cloudflare WARP registration directly from European edge infrastructure (\`--gool\`). Guaranteed German / Dutch GeoIP on all streaming platforms, banking, and AI gateways.
+            - **Triple-Engine Selector Architecture**: Dedicated cyber segmented UI control to switch seamlessly between **GOOL** (Guaranteed Europe GeoIP), **DIRECT** (Single-hop lowest latency / maximum throughput), and **MIM** (Dual-Hop subnet cascaded isolation).
+            - **Subnet Split Isolation for MIM**: Outer hop pinned to 162.159.x.x and Inner hop locked to 188.114.x.x to force dynamic transit routing across Cloudflare internal backbones.
+            - **Reactive Cyber Aesthetics**: Real-time optic lens state morphing, color-coded radar wave telemetry (Emerald for GOOL, Neon Purple for MIM, Cyber Blue for DIRECT), and haptic touch feedback.
+            - **DNS Hardening**: Enhanced fake-ip filtering and zero-leak socket routing."

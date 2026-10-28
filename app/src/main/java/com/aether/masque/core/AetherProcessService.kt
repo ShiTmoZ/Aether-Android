@@ -10,11 +10,17 @@ import java.io.File
 import java.io.InputStreamReader
 import java.util.regex.Pattern
 
+enum class TunnelMode {
+    DIRECT, // Single-hop MASQUE over HTTP/2: maximum speed, lowest ping, localized privacy
+    GOOL,   // MASQUE H2 outer + WireGuard WARP inner: registers from inside Cloudflare Europe for guaranteed DE/NL GeoIP
+    MIM     // Dual-Hop MASQUE with dual subnet split (162.159 -> 188.114)
+}
+
 class AetherProcessService(
     private val context: Context,
     private val targetPeer: String? = null,
     private val forceFreshScan: Boolean = false,
-    private val enableMim: Boolean = false
+    private val tunnelMode: TunnelMode = TunnelMode.GOOL
 ) {
     companion object {
         private const val TAG = "AetherProcessService"
@@ -85,34 +91,50 @@ class AetherProcessService(
                     "--bind", "127.0.0.1:$SOCKS_PORT"
                 )
 
-                if (enableMim) {
-                    args.add("--mim")
-                    if (!targetPeer.isNullOrBlank() && targetPeer != "auto") {
-                        args.add("--mim-outer")
-                        args.add(targetPeer)
-                        _logs.emit("[CORE] MIM Dual-Hop: Outer Edge $targetPeer, Exit IP -> Europe...")
-                    } else {
-                        args.add("--mim-scan")
-                        _logs.emit("[CORE] MIM Dual-Hop: Dynamic Mesh, Exit IP -> Europe...")
+                when (tunnelMode) {
+                    TunnelMode.GOOL -> {
+                        // GOOL: MASQUE over H2 for the outer hop, WireGuard WARP inner hop.
+                        // Inner registration happens from inside Cloudflare edge, locking European GeoIP.
+                        args.add("--gool")
+                        if (!targetPeer.isNullOrBlank() && targetPeer != "auto") {
+                            args.add("--peer")
+                            args.add(targetPeer)
+                            _logs.emit("[CORE] GOOL Mode: Ingress $targetPeer, dialing WARP inner for European GeoIP...")
+                        } else {
+                            args.add("--scan")
+                            args.add("turbo")
+                            _logs.emit("[CORE] GOOL Mode: Anycast Mesh Ingress, dialing WARP inner for European GeoIP...")
+                        }
                     }
-                } else {
-                    args.add("--protocol")
-                    args.add("masque")
-
-                    if (!targetPeer.isNullOrBlank() && targetPeer != "auto") {
-                        args.add("--peer")
-                        args.add(targetPeer)
-                        _logs.emit("[CORE] Direct Peering Mode: locking to $targetPeer...")
-                    } else if (forceFreshScan) {
-                        args.add("--scan")
-                        args.add("balanced")
-                        args.add("--no-quick-reconnect")
-                        _logs.emit("[CORE] Hunt Mode: sweeping Anycast pool for lowest latency edge...")
-                    } else {
-                        args.add("--scan")
-                        args.add("turbo")
-                        args.add("--quick-reconnect")
-                        _logs.emit("[CORE] Turbo Anycast Mesh Mode (Profile: $perfProfile)...")
+                    TunnelMode.MIM -> {
+                        // MIM: Dual MASQUE hops. Subnet separation is enforced to trigger exit IP relocation.
+                        args.add("--mim")
+                        val outer = if (!targetPeer.isNullOrBlank() && targetPeer != "auto") targetPeer else "162.159.198.4:443"
+                        val inner = "188.114.96.1:443"
+                        args.add("--mim-outer")
+                        args.add(outer)
+                        args.add("--mim-inner")
+                        args.add(inner)
+                        _logs.emit("[CORE] MIM Dual-Hop: Outer $outer -> Inner $inner (Subnet Split)...")
+                    }
+                    TunnelMode.DIRECT -> {
+                        args.add("--protocol")
+                        args.add("masque")
+                        if (!targetPeer.isNullOrBlank() && targetPeer != "auto") {
+                            args.add("--peer")
+                            args.add(targetPeer)
+                            _logs.emit("[CORE] Direct Peering Mode: locking to $targetPeer...")
+                        } else if (forceFreshScan) {
+                            args.add("--scan")
+                            args.add("balanced")
+                            args.add("--no-quick-reconnect")
+                            _logs.emit("[CORE] Hunt Mode: sweeping Anycast pool for lowest latency edge...")
+                        } else {
+                            args.add("--scan")
+                            args.add("turbo")
+                            args.add("--quick-reconnect")
+                            _logs.emit("[CORE] Turbo Anycast Mesh Mode (Profile: $perfProfile)...")
+                        }
                     }
                 }
 
@@ -127,7 +149,11 @@ class AetherProcessService(
                     put("TMPDIR", context.cacheDir.absolutePath)
                     put("AETHER_CONFIG", File(context.filesDir, "aether.toml").absolutePath)
                     put("AETHER_MASQUE_CONFIG", identityFile.absolutePath)
-                    put("AETHER_PROTOCOL", if (enableMim) "mim" else "masque")
+                    put("AETHER_PROTOCOL", when (tunnelMode) {
+                        TunnelMode.GOOL -> "gool"
+                        TunnelMode.MIM -> "mim"
+                        TunnelMode.DIRECT -> "masque"
+                    })
                     put("AETHER_PERF_PROFILE", perfProfile)
                 }
 
@@ -156,7 +182,7 @@ class AetherProcessService(
                     }
 
                     // Trigger ready state when socks listener or tunnel is established
-                    if (!notifiedReady && (text.contains("listening") || text.contains("127.0.0.1:$SOCKS_PORT") || text.contains("tunnel validated") || text.contains("warp on") || text.contains("connected"))) {
+                    if (!notifiedReady && (text.contains("listening") || text.contains("127.0.0.1:$SOCKS_PORT") || text.contains("tunnel validated") || text.contains("warp on") || text.contains("connected") || text.contains("gool tunnel ready"))) {
                         notifiedReady = true
                         withContext(Dispatchers.Main) {
                             onReady()
