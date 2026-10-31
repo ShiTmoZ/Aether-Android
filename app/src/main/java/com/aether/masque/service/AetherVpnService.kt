@@ -12,7 +12,6 @@ import android.os.ParcelFileDescriptor
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.aether.masque.core.AetherProcessService
-import com.aether.masque.core.TunnelMode
 import com.aether.masque.ui.MainActivity
 import com.v2ray.ang.service.TProxyService
 import kotlinx.coroutines.*
@@ -38,7 +37,6 @@ class AetherVpnService : VpnService() {
         const val ACTION_DISCONNECT = "com.aether.masque.ACTION_DISCONNECT"
         const val EXTRA_PEER = "com.aether.masque.EXTRA_PEER"
         const val EXTRA_FRESH_SCAN = "com.aether.masque.EXTRA_FRESH_SCAN"
-        const val EXTRA_TUNNEL_MODE = "com.aether.masque.EXTRA_TUNNEL_MODE"
 
         private val _status = MutableStateFlow(ConnectionStatus.DISCONNECTED)
         val status: StateFlow<ConnectionStatus> = _status.asStateFlow()
@@ -46,11 +44,8 @@ class AetherVpnService : VpnService() {
         private val _rtt = MutableStateFlow("-- ms")
         val rtt: StateFlow<String> = _rtt.asStateFlow()
 
-        private val _gateway = MutableStateFlow("162.159.198.x:443")
+        private val _gateway = MutableStateFlow("Anycast Mesh")
         val gateway: StateFlow<String> = _gateway.asStateFlow()
-
-        private val _activeTunnelMode = MutableStateFlow(TunnelMode.GOOL)
-        val activeTunnelMode: StateFlow<TunnelMode> = _activeTunnelMode.asStateFlow()
 
         private val _logLines = MutableStateFlow<List<String>>(emptyList())
         val logLines: StateFlow<List<String>> = _logLines.asStateFlow()
@@ -61,14 +56,12 @@ class AetherVpnService : VpnService() {
         fun startService(
             context: Context,
             peer: String? = null,
-            freshScan: Boolean = false,
-            mode: TunnelMode = TunnelMode.GOOL
+            freshScan: Boolean = false
         ) {
             val intent = Intent(context, AetherVpnService::class.java).apply {
                 action = ACTION_CONNECT
                 putExtra(EXTRA_PEER, peer)
                 putExtra(EXTRA_FRESH_SCAN, freshScan)
-                putExtra(EXTRA_TUNNEL_MODE, mode.name)
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
@@ -90,7 +83,6 @@ class AetherVpnService : VpnService() {
     private var vpnInterface: ParcelFileDescriptor? = null
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var durationJob: Job? = null
-    private var currentMode = TunnelMode.GOOL
 
     override fun onCreate() {
         super.onCreate()
@@ -102,9 +94,7 @@ class AetherVpnService : VpnService() {
             ACTION_CONNECT -> {
                 val peer = intent.getStringExtra(EXTRA_PEER)
                 val freshScan = intent.getBooleanExtra(EXTRA_FRESH_SCAN, false)
-                val modeName = intent.getStringExtra(EXTRA_TUNNEL_MODE) ?: TunnelMode.GOOL.name
-                val mode = try { TunnelMode.valueOf(modeName) } catch (e: Exception) { TunnelMode.GOOL }
-                startVpn(peer, freshScan, mode)
+                startVpn(peer, freshScan)
             }
             ACTION_DISCONNECT -> {
                 stopVpn()
@@ -113,18 +103,16 @@ class AetherVpnService : VpnService() {
         return START_NOT_STICKY
     }
 
-    private fun startVpn(peer: String? = null, freshScan: Boolean = false, mode: TunnelMode = TunnelMode.GOOL) {
+    private fun startVpn(peer: String? = null, freshScan: Boolean = false) {
         if (_status.value == ConnectionStatus.CONNECTING || _status.value == ConnectionStatus.CONNECTED) {
             stopVpn()
         }
 
-        currentMode = mode
-        _activeTunnelMode.value = mode
         _status.value = ConnectionStatus.CONNECTING
         val targetLabel = if (!peer.isNullOrBlank() && peer != "auto") peer else "Anycast Mesh"
-        startForeground(NOTIFICATION_ID, buildNotification("Connecting (${mode.name}) to $targetLabel..."))
+        startForeground(NOTIFICATION_ID, buildNotification("Connecting to $targetLabel..."))
 
-        val proc = AetherProcessService(this, peer, freshScan, mode)
+        val proc = AetherProcessService(this, peer, freshScan)
         processService = proc
 
         // Listen for logs
@@ -140,7 +128,7 @@ class AetherVpnService : VpnService() {
                 if (proc.lastRtt != "-- ms") {
                     _rtt.value = proc.lastRtt
                 }
-                if (proc.lastGateway != "Cloudflare Edge") {
+                if (proc.lastGateway != "Anycast Mesh") {
                     _gateway.value = proc.lastGateway
                 }
             }
@@ -154,6 +142,13 @@ class AetherVpnService : VpnService() {
                 Log.e(TAG, "Aether core error: $errMsg")
                 _status.value = ConnectionStatus.ERROR
                 stopVpn()
+            },
+            onExit = { exitCode ->
+                Log.w(TAG, "Aether core exited: $exitCode")
+                if (_status.value == ConnectionStatus.CONNECTED) {
+                    _status.value = ConnectionStatus.DISCONNECTED
+                    stopVpn()
+                }
             }
         )
     }
@@ -166,7 +161,7 @@ class AetherVpnService : VpnService() {
                 .addRoute("0.0.0.0", 0)
                 .addDnsServer("1.1.1.1")
                 .addDnsServer("1.0.0.1")
-                .setSession("Aether ${currentMode.name}")
+                .setSession("Aether MASQUE")
                 .setBlocking(false)
 
             // Critical: bypass our own package so Aether core connects directly without routing loop
@@ -190,12 +185,7 @@ class AetherVpnService : VpnService() {
             proxy.start()
 
             _status.value = ConnectionStatus.CONNECTED
-            val statusTitle = when (currentMode) {
-                TunnelMode.GOOL -> "Connected · GOOL Europe IP"
-                TunnelMode.MIM -> "Connected · MIM Dual-Hop"
-                TunnelMode.DIRECT -> "Connected · MASQUE H2 Direct"
-            }
-            startForeground(NOTIFICATION_ID, buildNotification(statusTitle))
+            startForeground(NOTIFICATION_ID, buildNotification("Connected · MASQUE H2"))
 
             // Start timer
             _connectedSeconds.value = 0L

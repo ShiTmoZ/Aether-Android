@@ -62,30 +62,30 @@ jobs:
       - name: Prepare Release Artifact
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/AetherClient-v1.0.6-Universal.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/AetherClient-v1.0.7-Universal.apk
           ls -lh dist/
 
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: AetherClient-v1.0.6-Universal
-          path: dist/AetherClient-v1.0.6-Universal.apk
+          name: AetherClient-v1.0.7-Universal
+          path: dist/AetherClient-v1.0.7-Universal.apk
 
       - name: Publish GitHub Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG_NAME="v1.0.6"
+          TAG_NAME="v1.0.7"
           gh release delete $TAG_NAME --yes || true
           git tag -d $TAG_NAME 2>/dev/null || true
           git push origin :refs/tags/$TAG_NAME 2>/dev/null || true
           
-          gh release create $TAG_NAME dist/AetherClient-v1.0.6-Universal.apk \
-            --title "Aether MASQUE Android v1.0.6 (Autonomous 2,150-Node Mesh, Dual-Stack IPv6 & Verified Data-Plane)" \
-            --notes "### Aether MASQUE Android v1.0.6
+          gh release create $TAG_NAME dist/AetherClient-v1.0.7-Universal.apk \
+            --title "Aether MASQUE Android v1.0.7 (Pure MASQUE H2 & Unified Windows Architecture)" \
+            --notes "### Aether MASQUE Android v1.0.7
             
-            - **Autonomous 2,150-Node Dynamic Mesh Hunt**: Native Anycast edge discovery using \`--scan verified\` with parallel CONNECT-IP handshakes. Eliminates static IP locks.
-            - **Dual-Stack IPv4 & Anycast IPv6**: Full dual-stack support (\`--dual\`) evaluating both IPv4 and Cloudflare Anycast IPv6 (\`[2606:4700:d0::a29f:c001]\`) to completely bypass Iran Mobile (MCI) upload packet throttling.
-            - **Verified End-to-End Data-Plane**: Enforces real HTTP data-plane validation before exposing the tunnel, completely eliminating false-positive 'Connected in GUI, Offline in Browser' states.
-            - **Triple Tunnel Architecture**: Seamless switching between **GOOL** (Guaranteed Europe GeoIP), **DIRECT** (Lowest latency MASQUE H2), and **MIM** (Dual-Hop subnet cascaded isolation).
-            - **Obsidian Dark & Neon Cyber Aesthetics**: Meniscus glass, optic lens morphing, and haptic feedback."
+            - **Unified Pure MASQUE H2 Architecture**: Stripped out legacy GOOL/MIM multi-hop overhead, standardizing 100% on the battle-tested, line-rate MASQUE H2 core from the Windows client (\`--masque --h2 --dual --perf high\`).
+            - **Eliminated False Disconnects**: Fixed premature ready triggering and command parsing bugs, ensuring the Android TUN interface binds strictly when the SOCKS5 server is operational and verified.
+            - **Autonomous 2,150-Node Mesh Hunting**: Native Anycast edge discovery using \`--scan verified\` with dynamic auto-hunt and Re-Hunt button.
+            - **Zero Speed Loss & Low Latency**: Native single-hop MASQUE tunnel over HTTP/2 for maximum throughput and minimal battery/RAM footprint.
+            - **Obsidian Cyber Dark UI**: Clean single-orb power toggle, real-time RTT telemetry, and diagnostic console."

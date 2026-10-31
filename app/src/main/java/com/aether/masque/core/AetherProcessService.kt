@@ -10,17 +10,10 @@ import java.io.File
 import java.io.InputStreamReader
 import java.util.regex.Pattern
 
-enum class TunnelMode {
-    DIRECT, // Single-hop MASQUE over HTTP/2: maximum speed, lowest ping, localized privacy
-    GOOL,   // MASQUE H2 outer + WireGuard WARP inner: registers from inside Cloudflare Europe for guaranteed DE/NL GeoIP
-    MIM     // Dual-Hop MASQUE with dual subnet split (162.159 -> 188.114)
-}
-
 class AetherProcessService(
     private val context: Context,
     private val targetPeer: String? = null,
-    private val forceFreshScan: Boolean = false,
-    private val tunnelMode: TunnelMode = TunnelMode.GOOL
+    private val forceFreshScan: Boolean = false
 ) {
     companion object {
         private const val TAG = "AetherProcessService"
@@ -38,32 +31,17 @@ class AetherProcessService(
 
     var lastRtt: String = "-- ms"
         private set
-    var lastGateway: String = targetPeer ?: "Cloudflare Edge"
+    var lastGateway: String = targetPeer ?: "Anycast Mesh"
         private set
 
-    private fun ensureIdentityFile(): File {
-        val identityFile = File(context.filesDir, "aether-masque.toml")
-        if (!identityFile.exists() || identityFile.readText().contains("[REDACTED") || identityFile.length() < 300L) {
-            identityFile.writeText(DefaultIdentity.MASQUE_TOML)
-            Log.i(TAG, "Provisioned valid aether-masque.toml")
-        }
-        val baseConfig = File(context.filesDir, "aether.toml")
-        if (!baseConfig.exists()) {
-            baseConfig.writeText("")
-        }
-        return identityFile
-    }
-
-    fun start(onReady: () -> Unit, onError: (String) -> Unit) {
+    fun start(onReady: () -> Unit, onError: (String) -> Unit, onExit: (Int) -> Unit = {}) {
         scope.launch {
             try {
-                val identityFile = ensureIdentityFile()
-
                 val binary = File(context.applicationInfo.nativeLibraryDir, BINARY_NAME)
                 if (!binary.exists()) {
                     val err = "Engine binary missing: ${binary.absolutePath}"
                     Log.e(TAG, err)
-                    onError(err)
+                    withContext(Dispatchers.Main) { onError(err) }
                     return@launch
                 }
 
@@ -71,85 +49,29 @@ class AetherProcessService(
                     binary.setExecutable(true, false)
                 }
 
-                // Dynamic hardware-aware profiling:
-                // Prevents CPU thrashing and out-of-order stalls on budget devices (e.g. Helio P22 / A10s)
-                // while maintaining ultra-fast socket queues on mid-range and flagship processors.
-                val maxMemMb = Runtime.getRuntime().maxMemory() / (1024 * 1024)
-                val cores = Runtime.getRuntime().availableProcessors()
-                val perfProfile = when {
-                    cores <= 4 || maxMemMb < 256 -> "low"
-                    else -> "medium" // "medium" is optimal for mobile Android devices to avoid excessive server thread pool spawning
-                }
-
+                // Native Aether MASQUE command-line matching Windows production engine
                 val args = mutableListOf(
                     binary.absolutePath,
+                    "--masque",
                     "--h2",
                     "--dual",
-                    "--perf", perfProfile,
-                    "--masque-config", identityFile.absolutePath,
+                    "--perf", "high",
                     "--bind", "127.0.0.1:$SOCKS_PORT"
                 )
 
-                when (tunnelMode) {
-                    TunnelMode.GOOL -> {
-                        // GOOL: MASQUE over H2 for the outer hop, WireGuard WARP inner hop.
-                        // Inner registration happens from inside Cloudflare edge, locking European GeoIP.
-                        args.add("--gool")
-                        if (!targetPeer.isNullOrBlank() && targetPeer != "auto") {
-                            args.add("--peer")
-                            args.add(targetPeer)
-                            _logs.emit("[CORE] GOOL Mode: Ingress $targetPeer, dialing WARP inner for European GeoIP...")
-                        } else {
-                            args.add("--scan")
-                            args.add("verified")
-                            if (forceFreshScan) {
-                                args.add("--no-quick-reconnect")
-                                _logs.emit("[CORE] GOOL Fresh Hunt: sweeping Anycast pool for verified European hops...")
-                            } else {
-                                args.add("--quick-reconnect")
-                                _logs.emit("[CORE] GOOL Mode: Verified Anycast Mesh, dialing WARP inner for European GeoIP...")
-                            }
-                        }
-                    }
-                    TunnelMode.MIM -> {
-                        // MIM: Dual MASQUE hops. Subnet separation is enforced to trigger exit IP relocation.
-                        args.add("--mim")
-                        if (!targetPeer.isNullOrBlank() && targetPeer != "auto") {
-                            args.add("--mim-outer")
-                            args.add(targetPeer)
-                            args.add("--mim-inner")
-                            args.add("188.114.96.1:443")
-                            _logs.emit("[CORE] MIM Dual-Hop: Outer $targetPeer -> Inner 188.114.96.1 (Subnet Split)...")
-                        } else {
-                            args.add("--scan")
-                            args.add("verified")
-                            if (forceFreshScan) {
-                                args.add("--no-quick-reconnect")
-                                _logs.emit("[CORE] MIM Fresh Hunt: sweeping Anycast dual subnets...")
-                            } else {
-                                args.add("--quick-reconnect")
-                                _logs.emit("[CORE] MIM Dual-Hop: Verified Subnet Split Mesh...")
-                            }
-                        }
-                    }
-                    TunnelMode.DIRECT -> {
-                        args.add("--protocol")
-                        args.add("masque")
-                        if (!targetPeer.isNullOrBlank() && targetPeer != "auto") {
-                            args.add("--peer")
-                            args.add(targetPeer)
-                            _logs.emit("[CORE] Direct Peering Mode: locking to $targetPeer...")
-                        } else {
-                            args.add("--scan")
-                            args.add("verified")
-                            if (forceFreshScan) {
-                                args.add("--no-quick-reconnect")
-                                _logs.emit("[CORE] Hunt Mode: sweeping Anycast pool for verified lowest latency edge...")
-                            } else {
-                                args.add("--quick-reconnect")
-                                _logs.emit("[CORE] Verified Anycast Mesh Mode (Profile: $perfProfile)...")
-                            }
-                        }
+                if (!targetPeer.isNullOrBlank() && targetPeer != "auto") {
+                    args.add("--peer")
+                    args.add(targetPeer)
+                    _logs.emit("[CORE] Direct Peering: locked to $targetPeer...")
+                } else {
+                    args.add("--scan")
+                    args.add("verified")
+                    if (forceFreshScan) {
+                        args.add("--no-quick-reconnect")
+                        _logs.emit("[CORE] Dynamic Mesh Hunt: sweeping Anycast candidate pool...")
+                    } else {
+                        args.add("--quick-reconnect")
+                        _logs.emit("[CORE] Verified Anycast Mesh (High Performance)...")
                     }
                 }
 
@@ -162,14 +84,8 @@ class AetherProcessService(
                 builder.environment().apply {
                     put("HOME", context.filesDir.absolutePath)
                     put("TMPDIR", context.cacheDir.absolutePath)
-                    put("AETHER_CONFIG", File(context.filesDir, "aether.toml").absolutePath)
-                    put("AETHER_MASQUE_CONFIG", identityFile.absolutePath)
-                    put("AETHER_PROTOCOL", when (tunnelMode) {
-                        TunnelMode.GOOL -> "gool"
-                        TunnelMode.MIM -> "mim"
-                        TunnelMode.DIRECT -> "masque"
-                    })
-                    put("AETHER_PERF_PROFILE", perfProfile)
+                    put("AETHER_PROTOCOL", "masque")
+                    put("AETHER_PERF_PROFILE", "high")
                 }
 
                 val proc = builder.start()
@@ -179,7 +95,7 @@ class AetherProcessService(
 
                 val reader = BufferedReader(InputStreamReader(proc.inputStream))
                 var line: String? = null
-                while (coroutineContext.isActive && proc.isAlive && reader.readLine().also { line = it } != null) {
+                while (isActive && proc.isAlive && reader.readLine().also { line = it } != null) {
                     val text = line ?: continue
                     Log.d(TAG, text)
                     _logs.emit(text)
@@ -193,11 +109,16 @@ class AetherProcessService(
                     // Extract Gateway
                     val gwMatcher = GW_REGEX.matcher(text)
                     if (gwMatcher.find()) {
-                        lastGateway = gwMatcher.group(1) ?: lastGateway
+                        val candidate = gwMatcher.group()
+                        if (!candidate.startsWith("127.0.0.1")) {
+                            lastGateway = candidate
+                        }
                     }
 
-                    // Trigger ready state when socks listener or tunnel is established
-                    if (!notifiedReady && (text.contains("listening") || text.contains("127.0.0.1:$SOCKS_PORT") || text.contains("tunnel validated") || text.contains("warp on") || text.contains("connected") || text.contains("gool tunnel ready"))) {
+                    // Trigger ready ONLY when socks5 server is actually listening
+                    if (!notifiedReady && (text.contains("socks5 server listening", ignoreCase = true) ||
+                                           text.contains("tunnel validated", ignoreCase = true) ||
+                                           text.contains("127.0.0.1:$SOCKS_PORT"))) {
                         notifiedReady = true
                         withContext(Dispatchers.Main) {
                             onReady()
@@ -208,6 +129,13 @@ class AetherProcessService(
                 val exitCode = proc.waitFor()
                 Log.w(TAG, "Aether process terminated with code $exitCode")
                 _logs.emit("[CORE] Engine stopped (code $exitCode)")
+                withContext(Dispatchers.Main) {
+                    if (!notifiedReady) {
+                        onError("Engine exited unexpectedly (code $exitCode)")
+                    } else {
+                        onExit(exitCode)
+                    }
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Process error", e)
                 _logs.emit("[ERR] ${e.localizedMessage}")
