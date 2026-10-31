@@ -28,7 +28,7 @@ class AetherProcessService(
         const val BINARY_NAME = "libaether.so"
 
         private val RTT_REGEX = Pattern.compile("([0-9.]+ms)")
-        private val GW_REGEX = Pattern.compile("([0-9.]+:[0-9]+)")
+        private val GW_REGEX = Pattern.compile("(?:\\[[0-9a-fA-F:]+\\]|\\b[0-9.]+):[0-9]+")
     }
 
     private var process: Process? = null
@@ -84,9 +84,8 @@ class AetherProcessService(
                 val args = mutableListOf(
                     binary.absolutePath,
                     "--h2",
-                    "--ip", "v4",
+                    "--dual",
                     "--perf", perfProfile,
-                    "--no-data-check",
                     "--masque-config", identityFile.absolutePath,
                     "--bind", "127.0.0.1:$SOCKS_PORT"
                 )
@@ -102,20 +101,36 @@ class AetherProcessService(
                             _logs.emit("[CORE] GOOL Mode: Ingress $targetPeer, dialing WARP inner for European GeoIP...")
                         } else {
                             args.add("--scan")
-                            args.add("turbo")
-                            _logs.emit("[CORE] GOOL Mode: Anycast Mesh Ingress, dialing WARP inner for European GeoIP...")
+                            args.add("verified")
+                            if (forceFreshScan) {
+                                args.add("--no-quick-reconnect")
+                                _logs.emit("[CORE] GOOL Fresh Hunt: sweeping Anycast pool for verified European hops...")
+                            } else {
+                                args.add("--quick-reconnect")
+                                _logs.emit("[CORE] GOOL Mode: Verified Anycast Mesh, dialing WARP inner for European GeoIP...")
+                            }
                         }
                     }
                     TunnelMode.MIM -> {
                         // MIM: Dual MASQUE hops. Subnet separation is enforced to trigger exit IP relocation.
                         args.add("--mim")
-                        val outer = if (!targetPeer.isNullOrBlank() && targetPeer != "auto") targetPeer else "162.159.198.4:443"
-                        val inner = "188.114.96.1:443"
-                        args.add("--mim-outer")
-                        args.add(outer)
-                        args.add("--mim-inner")
-                        args.add(inner)
-                        _logs.emit("[CORE] MIM Dual-Hop: Outer $outer -> Inner $inner (Subnet Split)...")
+                        if (!targetPeer.isNullOrBlank() && targetPeer != "auto") {
+                            args.add("--mim-outer")
+                            args.add(targetPeer)
+                            args.add("--mim-inner")
+                            args.add("188.114.96.1:443")
+                            _logs.emit("[CORE] MIM Dual-Hop: Outer $targetPeer -> Inner 188.114.96.1 (Subnet Split)...")
+                        } else {
+                            args.add("--scan")
+                            args.add("verified")
+                            if (forceFreshScan) {
+                                args.add("--no-quick-reconnect")
+                                _logs.emit("[CORE] MIM Fresh Hunt: sweeping Anycast dual subnets...")
+                            } else {
+                                args.add("--quick-reconnect")
+                                _logs.emit("[CORE] MIM Dual-Hop: Verified Subnet Split Mesh...")
+                            }
+                        }
                     }
                     TunnelMode.DIRECT -> {
                         args.add("--protocol")
@@ -124,16 +139,16 @@ class AetherProcessService(
                             args.add("--peer")
                             args.add(targetPeer)
                             _logs.emit("[CORE] Direct Peering Mode: locking to $targetPeer...")
-                        } else if (forceFreshScan) {
-                            args.add("--scan")
-                            args.add("balanced")
-                            args.add("--no-quick-reconnect")
-                            _logs.emit("[CORE] Hunt Mode: sweeping Anycast pool for lowest latency edge...")
                         } else {
                             args.add("--scan")
-                            args.add("turbo")
-                            args.add("--quick-reconnect")
-                            _logs.emit("[CORE] Turbo Anycast Mesh Mode (Profile: $perfProfile)...")
+                            args.add("verified")
+                            if (forceFreshScan) {
+                                args.add("--no-quick-reconnect")
+                                _logs.emit("[CORE] Hunt Mode: sweeping Anycast pool for verified lowest latency edge...")
+                            } else {
+                                args.add("--quick-reconnect")
+                                _logs.emit("[CORE] Verified Anycast Mesh Mode (Profile: $perfProfile)...")
+                            }
                         }
                     }
                 }

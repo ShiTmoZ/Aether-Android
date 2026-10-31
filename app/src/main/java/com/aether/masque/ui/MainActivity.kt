@@ -60,7 +60,8 @@ data class CleanEdge(
 )
 
 val CLEAN_EDGES = listOf(
-    CleanEdge("auto", "Auto Turbo Anycast", "⚡", null, "Anycast Mesh", "Dynamic"),
+    CleanEdge("auto", "Auto Verified Mesh", "⚡", null, "Dual-Stack 2,150 Anycast", "Dynamic"),
+    CleanEdge("mci_ipv6", "MCI Anycast IPv6", "🇮🇷", "[2606:4700:d0::a29f:c001]:443", "Anycast IPv6", "~130 ms"),
     CleanEdge("de_frankfurt", "Frankfurt Alpha", "🇩🇪", "162.159.198.4:443", "Germany", "~140 ms"),
     CleanEdge("nl_amsterdam", "Amsterdam Direct", "🇳🇱", "162.159.198.198:443", "Netherlands", "~145 ms"),
     CleanEdge("se_stockholm", "Stockholm Edge", "🇸🇪", "162.159.192.1:443", "Sweden", "~155 ms"),

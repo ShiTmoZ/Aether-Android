@@ -62,30 +62,30 @@ jobs:
       - name: Prepare Release Artifact
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/AetherClient-v1.0.5-Universal.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/AetherClient-v1.0.6-Universal.apk
           ls -lh dist/
 
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: AetherClient-v1.0.5-Universal
-          path: dist/AetherClient-v1.0.5-Universal.apk
+          name: AetherClient-v1.0.6-Universal
+          path: dist/AetherClient-v1.0.6-Universal.apk
 
       - name: Publish GitHub Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG_NAME="v1.0.5"
+          TAG_NAME="v1.0.6"
           gh release delete $TAG_NAME --yes || true
           git tag -d $TAG_NAME 2>/dev/null || true
           git push origin :refs/tags/$TAG_NAME 2>/dev/null || true
           
-          gh release create $TAG_NAME dist/AetherClient-v1.0.5-Universal.apk \
-            --title "Aether MASQUE Android v1.0.5 (Triple Tunnel Architecture: GOOL Europe Exit, DIRECT & MIM Subnet Split)" \
-            --notes "### Aether MASQUE Android v1.0.5
+          gh release create $TAG_NAME dist/AetherClient-v1.0.6-Universal.apk \
+            --title "Aether MASQUE Android v1.0.6 (Autonomous 2,150-Node Mesh, Dual-Stack IPv6 & Verified Data-Plane)" \
+            --notes "### Aether MASQUE Android v1.0.6
             
-            - **GOOL Protocol Mode**: Outer MASQUE H2 bypass + Inner Cloudflare WARP registration directly from European edge infrastructure (\`--gool\`). Guaranteed German / Dutch GeoIP on all streaming platforms, banking, and AI gateways.
-            - **Triple-Engine Selector Architecture**: Dedicated cyber segmented UI control to switch seamlessly between **GOOL** (Guaranteed Europe GeoIP), **DIRECT** (Single-hop lowest latency / maximum throughput), and **MIM** (Dual-Hop subnet cascaded isolation).
-            - **Subnet Split Isolation for MIM**: Outer hop pinned to 162.159.x.x and Inner hop locked to 188.114.x.x to force dynamic transit routing across Cloudflare internal backbones.
-            - **Reactive Cyber Aesthetics**: Real-time optic lens state morphing, color-coded radar wave telemetry (Emerald for GOOL, Neon Purple for MIM, Cyber Blue for DIRECT), and haptic touch feedback.
-            - **DNS Hardening**: Enhanced fake-ip filtering and zero-leak socket routing."
+            - **Autonomous 2,150-Node Dynamic Mesh Hunt**: Native Anycast edge discovery using \`--scan verified\` with parallel CONNECT-IP handshakes. Eliminates static IP locks.
+            - **Dual-Stack IPv4 & Anycast IPv6**: Full dual-stack support (\`--dual\`) evaluating both IPv4 and Cloudflare Anycast IPv6 (\`[2606:4700:d0::a29f:c001]\`) to completely bypass Iran Mobile (MCI) upload packet throttling.
+            - **Verified End-to-End Data-Plane**: Enforces real HTTP data-plane validation before exposing the tunnel, completely eliminating false-positive 'Connected in GUI, Offline in Browser' states.
+            - **Triple Tunnel Architecture**: Seamless switching between **GOOL** (Guaranteed Europe GeoIP), **DIRECT** (Lowest latency MASQUE H2), and **MIM** (Dual-Hop subnet cascaded isolation).
+            - **Obsidian Dark & Neon Cyber Aesthetics**: Meniscus glass, optic lens morphing, and haptic feedback."
