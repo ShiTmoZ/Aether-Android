@@ -115,32 +115,49 @@ class AetherVpnService : VpnService() {
         val proc = AetherProcessService(this, peer, freshScan)
         processService = proc
 
-        // Listen for logs
+        // Rate-limited log buffer to prevent Compose UI stutter on low-end devices
+        val ringBuffer = ArrayDeque<String>(50)
+        var lastLogFlush = 0L
+
         serviceScope.launch {
             proc.logs.collect { line ->
-                val current = _logLines.value.toMutableList()
-                if (current.size > 300) {
-                    current.removeAt(0)
+                synchronized(ringBuffer) {
+                    if (ringBuffer.size >= 50) {
+                        ringBuffer.removeFirst()
+                    }
+                    ringBuffer.addLast(line)
                 }
-                current.add(line)
-                _logLines.value = current
 
-                if (proc.lastRtt != "-- ms") {
+                if (proc.lastRtt != "-- ms" && proc.lastRtt != _rtt.value) {
                     _rtt.value = proc.lastRtt
                 }
-                if (proc.lastGateway != "Anycast Mesh") {
+                if (proc.lastGateway != "Anycast Mesh" && proc.lastGateway != _gateway.value) {
                     _gateway.value = proc.lastGateway
+                }
+
+                val now = System.currentTimeMillis()
+                if (now - lastLogFlush > 300L) {
+                    lastLogFlush = now
+                    synchronized(ringBuffer) {
+                        _logLines.value = ArrayList(ringBuffer)
+                    }
                 }
             }
         }
 
         proc.start(
             onReady = {
+                synchronized(ringBuffer) {
+                    _logLines.value = ArrayList(ringBuffer)
+                }
                 setupTunInterface()
             },
             onError = { errMsg ->
                 Log.e(TAG, "Aether core error: $errMsg")
                 _status.value = ConnectionStatus.ERROR
+                synchronized(ringBuffer) {
+                    _logLines.value = ArrayList(ringBuffer)
+                }
                 stopVpn()
             },
             onExit = { exitCode ->

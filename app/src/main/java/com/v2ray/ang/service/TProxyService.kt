@@ -36,14 +36,14 @@ class TProxyService(
 
     fun start(): Boolean {
         return try {
-            // Adaptive buffer sizing to ensure smooth throughput on both low-end (e.g. A10s) and flagship devices
+            // Adaptive buffer sizing to ensure smooth line-rate throughput with minimal RAM on all tiers
             val maxMemMb = Runtime.getRuntime().maxMemory() / (1024 * 1024)
             val cores = Runtime.getRuntime().availableProcessors()
-            val isLowSpec = maxMemMb < 300 || cores <= 4
+            val isLowSpec = maxMemMb < 384 || cores <= 4
 
-            val tcpBuf = if (isLowSpec) 65536 else 131072
-            val udpBuf = if (isLowSpec) 131072 else 524288
-            val taskStack = if (isLowSpec) 32768 else 65536
+            val tcpBuf = if (isLowSpec) 32768 else 65536
+            val udpBuf = if (isLowSpec) 65536 else 131072
+            val taskStack = if (isLowSpec) 16384 else 32768
 
             val configContent = """
                 tunnel:
@@ -65,7 +65,7 @@ class TProxyService(
             val configFile = File(context.filesDir, "hev-socks5-tunnel.yaml").apply {
                 writeText(configContent)
             }
-            Log.i(TAG, "Starting hev-socks5-tunnel (Adaptive: tcp=$tcpBuf, udp=$udpBuf, stack=$taskStack, lowSpec=$isLowSpec) on fd: ${vpnInterface.fd}")
+            Log.i(TAG, "Starting hev-socks5-tunnel (Ultra-Light: tcp=$tcpBuf, udp=$udpBuf, stack=$taskStack, lowSpec=$isLowSpec) on fd: ${vpnInterface.fd}")
             TProxyStartService(configFile.absolutePath, vpnInterface.fd)
         } catch (e: Exception) {
             Log.e(TAG, "Error starting hev-socks5-tunnel", e)

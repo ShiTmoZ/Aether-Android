@@ -26,7 +26,7 @@ class AetherProcessService(
 
     private var process: Process? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private val _logs = MutableSharedFlow<String>(extraBufferCapacity = 500)
+    private val _logs = MutableSharedFlow<String>(extraBufferCapacity = 100)
     val logs: SharedFlow<String> = _logs
 
     var lastRtt: String = "-- ms"
@@ -49,13 +49,17 @@ class AetherProcessService(
                     binary.setExecutable(true, false)
                 }
 
-                // Native Aether MASQUE command-line matching Windows production engine
+                // Dynamic hardware profiling: lightweight on budget devices, high throughput without thermal throttle
+                val maxMemMb = Runtime.getRuntime().maxMemory() / (1024 * 1024)
+                val cores = Runtime.getRuntime().availableProcessors()
+                val perfProfile = if (cores <= 4 || maxMemMb < 384) "low" else "medium"
+
                 val args = mutableListOf(
                     binary.absolutePath,
                     "--masque",
                     "--h2",
                     "--dual",
-                    "--perf", "high",
+                    "--perf", perfProfile,
                     "--bind", "127.0.0.1:$SOCKS_PORT"
                 )
 
@@ -68,10 +72,10 @@ class AetherProcessService(
                     args.add("verified")
                     if (forceFreshScan) {
                         args.add("--no-quick-reconnect")
-                        _logs.emit("[CORE] Dynamic Mesh Hunt: sweeping Anycast candidate pool...")
+                        _logs.emit("[CORE] Dynamic Mesh Hunt: sweeping Anycast pool...")
                     } else {
                         args.add("--quick-reconnect")
-                        _logs.emit("[CORE] Verified Anycast Mesh (High Performance)...")
+                        _logs.emit("[CORE] Verified Anycast Mesh ($perfProfile profile)...")
                     }
                 }
 
@@ -85,7 +89,7 @@ class AetherProcessService(
                     put("HOME", context.filesDir.absolutePath)
                     put("TMPDIR", context.cacheDir.absolutePath)
                     put("AETHER_PROTOCOL", "masque")
-                    put("AETHER_PERF_PROFILE", "high")
+                    put("AETHER_PERF_PROFILE", perfProfile)
                 }
 
                 val proc = builder.start()

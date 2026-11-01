@@ -14,7 +14,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -35,11 +34,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -98,20 +93,18 @@ fun AetherAppRoot() {
     val status by AetherVpnService.status.collectAsState()
     val rtt by AetherVpnService.rtt.collectAsState()
     val gateway by AetherVpnService.gateway.collectAsState()
-    val logLines by AetherVpnService.logLines.collectAsState()
     val durationSeconds by AetherVpnService.connectedSeconds.collectAsState()
 
     var showLogs by remember { mutableStateOf(false) }
     var showEdgeSheet by remember { mutableStateOf(false) }
 
-    // Launcher for VPN permission dialog
     val vpnLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
             AetherVpnService.startService(context, currentEdge.endpoint, false)
         } else {
-            Toast.makeText(context, "VPN permission is required to tunnel traffic", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "VPN permission required", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -127,12 +120,8 @@ fun AetherAppRoot() {
     val onToggle = {
         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
         when (status) {
-            ConnectionStatus.DISCONNECTED, ConnectionStatus.ERROR -> {
-                connectTunnel(false)
-            }
-            ConnectionStatus.CONNECTING, ConnectionStatus.CONNECTED -> {
-                AetherVpnService.stopService(context)
-            }
+            ConnectionStatus.DISCONNECTED, ConnectionStatus.ERROR -> connectTunnel(false)
+            ConnectionStatus.CONNECTING, ConnectionStatus.CONNECTED -> AetherVpnService.stopService(context)
         }
     }
 
@@ -145,29 +134,8 @@ fun AetherAppRoot() {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF05070B))
+            .background(Color(0xFF06080D))
     ) {
-        // Subtle cyber background grid
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val step = 40.dp.toPx()
-            for (x in 0..(size.width / step).toInt()) {
-                drawLine(
-                    color = Color.White.copy(alpha = 0.025f),
-                    start = Offset(x * step, 0f),
-                    end = Offset(x * step, size.height),
-                    strokeWidth = 1f
-                )
-            }
-            for (y in 0..(size.height / step).toInt()) {
-                drawLine(
-                    color = Color.White.copy(alpha = 0.025f),
-                    start = Offset(0f, y * step),
-                    end = Offset(size.width, y * step),
-                    strokeWidth = 1f
-                )
-            }
-        }
-
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -180,12 +148,12 @@ fun AetherAppRoot() {
             // Header Bar
             HeaderSection(status = status)
 
-            // Center: Optic Lens Button & Edge Selector
+            // Center: Power Button & Edge Selector
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
-                OpticLensButton(
+                PowerButton(
                     status = status,
                     onClick = onToggle
                 )
@@ -294,7 +262,6 @@ fun AetherAppRoot() {
                 Spacer(modifier = Modifier.height(10.dp))
 
                 LogDrawerTrigger(
-                    logCount = logLines.size,
                     expanded = showLogs,
                     onToggle = { showLogs = !showLogs }
                 )
@@ -305,12 +272,12 @@ fun AetherAppRoot() {
                     exit = shrinkVertically() + fadeOut()
                 ) {
                     DiagnosticLogWindow(
-                        logs = logLines,
                         onCopy = {
+                            val logs = AetherVpnService.logLines.value
                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            val clip = ClipData.newPlainText("Aether Logs", logLines.joinToString("\n"))
+                            val clip = ClipData.newPlainText("Aether Logs", logs.joinToString("\n"))
                             clipboard.setPrimaryClip(clip)
-                            Toast.makeText(context, "Logs copied to clipboard", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Logs copied", Toast.LENGTH_SHORT).show()
                         }
                     )
                 }
@@ -432,7 +399,7 @@ fun HeaderSection(status: ConnectionStatus) {
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = "MASQUE // H2 · DUAL-STACK",
+                    text = "PURE MASQUE // H2",
                     color = Color(0xFF38BDF8),
                     fontSize = 10.sp,
                     fontWeight = FontWeight.SemiBold,
@@ -446,7 +413,7 @@ fun HeaderSection(status: ConnectionStatus) {
                         .padding(horizontal = 4.dp, vertical = 1.dp)
                 ) {
                     Text(
-                        text = "TURBO",
+                        text = "LIGHT",
                         color = Color.White,
                         fontSize = 8.sp,
                         fontWeight = FontWeight.Bold
@@ -455,7 +422,6 @@ fun HeaderSection(status: ConnectionStatus) {
             }
         }
 
-        // Status Badge Pill
         val (bgColor, borderColor, textColor, label) = when (status) {
             ConnectionStatus.CONNECTED -> Quadruple(
                 Color(0xFF052E16), Color(0xFF10B981), Color(0xFF00E676), "ONLINE"
@@ -499,83 +465,53 @@ fun HeaderSection(status: ConnectionStatus) {
 }
 
 @Composable
-fun OpticLensButton(
+fun PowerButton(
     status: ConnectionStatus,
     onClick: () -> Unit
 ) {
     val isConnected = status == ConnectionStatus.CONNECTED
     val isConnecting = status == ConnectionStatus.CONNECTING
 
-    // Infinite radar pulsing animation
-    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-    val pulseScale by infiniteTransition.animateFloat(
-        initialValue = 1f,
-        targetValue = if (isConnected || isConnecting) 1.35f else 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1400, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "pulseScale"
+    val borderColor by animateColorAsState(
+        targetValue = when {
+            isConnected -> Color(0xFF00E676)
+            isConnecting -> Color(0xFF38BDF8)
+            else -> Color(0xFF334155)
+        },
+        animationSpec = tween(300),
+        label = "borderColor"
     )
-    val pulseAlpha by infiniteTransition.animateFloat(
-        initialValue = if (isConnected || isConnecting) 0.5f else 0f,
-        targetValue = 0f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1400, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "pulseAlpha"
+
+    val coreBg by animateColorAsState(
+        targetValue = when {
+            isConnected -> Color(0xFF03261B)
+            isConnecting -> Color(0xFF082236)
+            else -> Color(0xFF0D121B)
+        },
+        animationSpec = tween(300),
+        label = "coreBg"
+    )
+
+    val iconColor by animateColorAsState(
+        targetValue = when {
+            isConnected -> Color(0xFF00E676)
+            isConnecting -> Color(0xFF38BDF8)
+            else -> Color(0xFF94A3B8)
+        },
+        animationSpec = tween(300),
+        label = "iconColor"
     )
 
     Box(
         contentAlignment = Alignment.Center,
-        modifier = Modifier.size(180.dp)
+        modifier = Modifier.size(160.dp)
     ) {
-        // Radar Wave
-        if (isConnected || isConnecting) {
-            Canvas(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .scale(pulseScale)
-            ) {
-                drawCircle(
-                    color = if (isConnected) Color(0xFF00E676).copy(alpha = pulseAlpha) else Color(0xFF38BDF8).copy(alpha = pulseAlpha),
-                    style = Stroke(width = 2.dp.toPx())
-                )
-            }
-        }
-
-        // Liquid Glass Meniscus Ring & Lens Core
-        val lensBrush = when {
-            isConnected -> Brush.radialGradient(
-                colors = listOf(Color(0xFF064E3B), Color(0xFF022C22), Color(0xFF011A14))
-            )
-            isConnecting -> Brush.radialGradient(
-                colors = listOf(Color(0xFF0369A1), Color(0xFF082F49), Color(0xFF031627))
-            )
-            else -> Brush.radialGradient(
-                colors = listOf(Color(0xFF1E293B), Color(0xFF0F172A), Color(0xFF070B12))
-            )
-        }
-
-        val borderBrush = when {
-            isConnected -> Brush.linearGradient(
-                listOf(Color(0xFF00E676), Color(0xFF00E676).copy(alpha = 0.3f), Color.White.copy(alpha = 0.8f))
-            )
-            isConnecting -> Brush.linearGradient(
-                listOf(Color(0xFF38BDF8), Color(0xFF0284C7).copy(alpha = 0.4f), Color.White.copy(alpha = 0.8f))
-            )
-            else -> Brush.linearGradient(
-                listOf(Color.White.copy(alpha = 0.4f), Color.White.copy(alpha = 0.08f), Color.White.copy(alpha = 0.15f))
-            )
-        }
-
         Box(
             modifier = Modifier
-                .size(144.dp)
+                .size(140.dp)
                 .clip(CircleShape)
-                .background(lensBrush)
-                .border(2.dp, borderBrush, CircleShape)
+                .background(coreBg)
+                .border(2.5.dp, borderColor, CircleShape)
                 .clickable(onClick = onClick),
             contentAlignment = Alignment.Center
         ) {
@@ -586,12 +522,8 @@ fun OpticLensButton(
                 Icon(
                     imageVector = Icons.Default.PowerSettingsNew,
                     contentDescription = "Power",
-                    tint = when {
-                        isConnected -> Color(0xFF00E676)
-                        isConnecting -> Color(0xFF38BDF8)
-                        else -> Color(0xFF94A3B8)
-                    },
-                    modifier = Modifier.size(46.dp)
+                    tint = iconColor,
+                    modifier = Modifier.size(44.dp)
                 )
 
                 Spacer(modifier = Modifier.height(6.dp))
@@ -602,11 +534,7 @@ fun OpticLensButton(
                         isConnecting -> "CONNECTING"
                         else -> "CONNECT"
                     },
-                    color = when {
-                        isConnected -> Color(0xFF00E676)
-                        isConnecting -> Color(0xFF38BDF8)
-                        else -> Color(0xFFCBD5E1)
-                    },
+                    color = iconColor,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 1.sp
@@ -660,15 +588,9 @@ fun TelemetryBento(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
-            .background(Color(0xFF0C1017).copy(alpha = 0.9f))
-            .border(
-                1.dp,
-                Brush.linearGradient(
-                    listOf(Color.White.copy(alpha = 0.12f), Color.White.copy(alpha = 0.02f))
-                ),
-                RoundedCornerShape(18.dp)
-            )
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color(0xFF0C1017))
+            .border(1.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(16.dp))
             .padding(12.dp)
     ) {
         Row(
@@ -720,9 +642,9 @@ fun BentoItem(
 ) {
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(10.dp))
             .background(Color(0xFF080C13))
-            .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
+            .border(1.dp, Color.White.copy(alpha = 0.04f), RoundedCornerShape(10.dp))
             .padding(10.dp)
     ) {
         Column {
@@ -748,7 +670,6 @@ fun BentoItem(
 
 @Composable
 fun LogDrawerTrigger(
-    logCount: Int,
     expanded: Boolean,
     onToggle: () -> Unit
 ) {
@@ -777,20 +698,6 @@ fun LogDrawerTrigger(
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Medium
             )
-            Spacer(modifier = Modifier.width(8.dp))
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(Color(0xFF1E293B))
-                    .padding(horizontal = 6.dp, vertical = 2.dp)
-            ) {
-                Text(
-                    text = "$logCount",
-                    color = Color(0xFF94A3B8),
-                    fontSize = 10.sp,
-                    fontFamily = FontFamily.Monospace
-                )
-            }
         }
 
         Icon(
@@ -804,9 +711,9 @@ fun LogDrawerTrigger(
 
 @Composable
 fun DiagnosticLogWindow(
-    logs: List<String>,
     onCopy: () -> Unit
 ) {
+    val logs by AetherVpnService.logLines.collectAsState()
     val listState = rememberLazyListState()
 
     LaunchedEffect(logs.size) {
@@ -858,7 +765,6 @@ fun DiagnosticLogWindow(
             }
         }
 
-        // Copy button
         Box(
             modifier = Modifier
                 .align(Alignment.TopEnd)
